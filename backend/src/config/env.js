@@ -11,5 +11,7 @@ module.exports = {
   JWT_SECRET: process.env.JWT_SECRET || 'markaz_super_secret_jwt_key_2026',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '24h',
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:5173',
+  // Number of reverse proxies in front of the app (e.g. 1 behind Caddy/Nginx); 0 when exposed directly
+  TRUST_PROXY: parseInt(process.env.TRUST_PROXY || '0', 10),
   DEFAULT_CALENDAR_QUOTA: parseInt(process.env.DEFAULT_CALENDAR_QUOTA || '100', 10)
 };

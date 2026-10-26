@@ -17,6 +17,11 @@ const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 
+// Behind a reverse proxy, use X-Forwarded-For so rate limits apply per client, not per proxy
+if (env.TRUST_PROXY > 0) {
+  app.set('trust proxy', env.TRUST_PROXY);
+}
+
 // Security Middleware
 app.use(helmet());
 
