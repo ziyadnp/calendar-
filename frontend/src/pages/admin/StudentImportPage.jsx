@@ -13,7 +13,7 @@ import {
   FileText,
   Users
 } from 'lucide-react';
-import api from '../../services/api';
+import api, { downloadFile } from '../../services/api';
 
 export default function StudentImportPage({ onImportSuccess }) {
   const fileInputRef = useRef(null);
@@ -232,13 +232,14 @@ export default function StudentImportPage({ onImportSuccess }) {
             )}
 
             {executionResult.failed > 0 && (
-              <a
-                href={`/api/admin/students/import/${executionResult.importId}/errors`}
+              <button
+                type="button"
+                onClick={() => downloadFile(`/admin/students/import/${executionResult.importId}/errors`, `rejected_rows_import_${executionResult.importId}.xlsx`)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
               >
                 <Download className="w-4 h-4" />
                 <span>Download {executionResult.failed} Rejected Rows (.xlsx)</span>
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -528,13 +529,14 @@ export default function StudentImportPage({ onImportSuccess }) {
                     <td className="py-2.5 px-4 text-slate-600">{h.uploaded_by_name || 'Admin'}</td>
                     <td className="py-2.5 px-4 text-right">
                       {h.failed_rows > 0 ? (
-                        <a
-                          href={`/api/admin/students/import/${h.id}/errors`}
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(`/admin/students/import/${h.id}/errors`, `rejected_rows_import_${h.id}.xlsx`)}
                           className="text-xs text-red-600 hover:underline font-semibold inline-flex items-center gap-1"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>Rejected (.xlsx)</span>
-                        </a>
+                        </button>
                       ) : (
                         <span className="text-[11px] text-slate-400">None</span>
                       )}

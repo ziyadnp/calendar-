@@ -18,7 +18,7 @@ The frontend calls the API with relative URLs (`/api/...`), so frontend and back
 |---|---|
 | Domain | `calendar-app.mydomain.com` |
 | App directory | `/var/www/calendar-app` |
-| Linux user running the backend | `calendar` |
+| Linux user running the backend | `markaz-calendar` |
 | Backend port (internal only) | `5001` |
 | Database / DB user | `markaz_calendar` / `markaz_app` |
 
@@ -52,6 +52,14 @@ mysql --version
 caddy version
 ```
 
+Node must be installed **system-wide** (e.g. `/usr/bin/node`), because the app runs as a separate user and `sudo` doesn't use your shell's PATH. If `which node` shows an `nvm` path (`~/.nvm/...`), commands like `sudo -u markaz-calendar npm ci` fail with `sudo: npm: command not found`. Install Node system-wide from NodeSource (your nvm setup keeps working for your own user):
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+sudo -u nobody node -v   # confirms other users can run it
+```
+
 Make sure only SSH and web traffic are open, so port 5001 is never reachable from the internet (the backend listens on all interfaces):
 
 ```bash
@@ -78,11 +86,11 @@ Then on the **VPS**:
 
 ```bash
 # Dedicated system user with no login shell
-sudo adduser --system --group --home /var/www/calendar-app calendar
+sudo adduser --system --group --home /var/www/calendar-app markaz-calendar
 
 # Clone the repository
-sudo git clone https://github.com/mirjan4/calendar-.git /var/www/calendar-app
-sudo chown -R calendar:calendar /var/www/calendar-app
+sudo git clone https://github.com/ziyadnp/calendar-.git /var/www/calendar-app
+sudo chown -R markaz-calendar:markaz-calendar /var/www/calendar-app
 ```
 
 > If the repository is private, use a deploy key or a personal access token for the clone.
@@ -143,7 +151,7 @@ rm /tmp/markaz_calendar.sql
 
 ```bash
 cd /var/www/calendar-app/backend
-sudo -u calendar npm ci --omit=dev
+sudo -u markaz-calendar npm ci --omit=dev
 ```
 
 ### 5.2 Create the production `.env`
@@ -155,7 +163,7 @@ openssl rand -hex 32
 ```
 
 ```bash
-sudo -u calendar nano /var/www/calendar-app/backend/.env
+sudo -u markaz-calendar nano /var/www/calendar-app/backend/.env
 ```
 
 ```ini
@@ -188,7 +196,7 @@ sudo chmod 600 /var/www/calendar-app/backend/.env
 
 ```bash
 cd /var/www/calendar-app/backend
-sudo -u calendar node scripts/create_admin.js superadmin admin@mydomain.com 'YourStrongPassword' 'Super Admin' super_admin
+sudo -u markaz-calendar node scripts/create_admin.js superadmin admin@mydomain.com 'YourStrongPassword' 'Super Admin' super_admin
 ```
 
 Re-running the same command with a new password resets it.
@@ -215,8 +223,8 @@ Wants=mysql.service
 
 [Service]
 Type=simple
-User=calendar
-Group=calendar
+User=markaz-calendar
+Group=markaz-calendar
 WorkingDirectory=/var/www/calendar-app/backend
 ExecStart=/usr/bin/node src/server.js
 Restart=on-failure
@@ -233,13 +241,13 @@ ReadWritePaths=/var/www/calendar-app/backend/uploads
 WantedBy=multi-user.target
 ```
 
-Replace `/usr/bin/node` if `which node` printed something else (for example an `nvm` path. With nvm, install Node system-wide instead, because the `calendar` user can't read your nvm directory).
+Replace `/usr/bin/node` if `which node` printed something else (for example an `nvm` path. With nvm, install Node system-wide instead, because the `markaz-calendar` user can't read your nvm directory).
 
 Start it:
 
 ```bash
 sudo mkdir -p /var/www/calendar-app/backend/uploads/imports
-sudo chown -R calendar:calendar /var/www/calendar-app/backend/uploads
+sudo chown -R markaz-calendar:markaz-calendar /var/www/calendar-app/backend/uploads
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now calendar-app
@@ -261,8 +269,8 @@ Build the static files on the server:
 
 ```bash
 cd /var/www/calendar-app/frontend
-sudo -u calendar npm ci
-sudo -u calendar npm run build
+sudo -u markaz-calendar npm ci
+sudo -u markaz-calendar npm run build
 ```
 
 This produces `/var/www/calendar-app/frontend/dist`. No frontend `.env` is needed in production, because `API_TARGET` is only used by the Vite dev server.
@@ -324,13 +332,27 @@ calendar-app.mydomain.com {
 }
 ```
 
-Validate and reload:
+Make sure the Caddyfile starts with a global options block that sets a grace period. Without it, Caddy waits forever for open connections (from any site) to close, and `systemctl reload caddy` times out. If a global block already exists, add the line inside it:
+
+```caddy
+{
+	grace_period 10s
+}
+```
+
+Validate and reload. Run `validate` **as the `caddy` user**: running it as root creates the log file owned by root, and the Caddy service then can't open it and won't start (this takes down every site on the server):
 
 ```bash
+sudo mkdir -p /var/log/caddy
+sudo chown -R caddy:caddy /var/log/caddy
+
 sudo caddy fmt --overwrite /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
+sudo -u caddy caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
+sudo systemctl status caddy --no-pager
 ```
+
+Validate should print `Valid configuration`, and the log should mention a 10s grace period instead of "eternal".
 
 Caddy obtains the HTTPS certificate automatically on the first request. Open **https://calendar-app.mydomain.com** and log in with the admin account from step 5.3.
 
@@ -342,17 +364,17 @@ After pushing new commits to `main`:
 
 ```bash
 cd /var/www/calendar-app
-sudo -u calendar git pull origin main
+sudo -u markaz-calendar git pull origin main
 
 # Backend
 cd backend
-sudo -u calendar npm ci --omit=dev
+sudo -u markaz-calendar npm ci --omit=dev
 sudo systemctl restart calendar-app
 
 # Frontend
 cd ../frontend
-sudo -u calendar npm ci
-sudo -u calendar npm run build
+sudo -u markaz-calendar npm ci
+sudo -u markaz-calendar npm run build
 ```
 
 If `database/database.sql` gained new tables, re-run `sudo mysql < /var/www/calendar-app/database/database.sql`. It only creates missing tables and never changes existing ones, so column changes need an `ALTER TABLE` or a migration script.
@@ -363,9 +385,9 @@ Optionally, save this as `/var/www/calendar-app/deploy.sh` and run it with `sudo
 #!/usr/bin/env bash
 set -euo pipefail
 cd /var/www/calendar-app
-sudo -u calendar git pull origin main
-(cd backend  && sudo -u calendar npm ci --omit=dev)
-(cd frontend && sudo -u calendar npm ci && sudo -u calendar npm run build)
+sudo -u markaz-calendar git pull origin main
+(cd backend  && sudo -u markaz-calendar npm ci --omit=dev)
+(cd frontend && sudo -u markaz-calendar npm ci && sudo -u markaz-calendar npm run build)
 systemctl restart calendar-app
 curl -fsS http://127.0.0.1:5001/api/health && echo " <- backend OK"
 ```
@@ -406,6 +428,8 @@ gunzip < /var/backups/calendar-app/markaz_calendar_YYYY-MM-DD.sql.gz | sudo mysq
 | Refreshing a page like `/admin/students` gives 404 | The `try_files {path} /index.html` line is missing from the Caddy block |
 | Blank page / 403 on static files | Caddy can't read `frontend/dist`: re-run the `chmod` commands in step 6 |
 | "Too many requests" for many users at once | `TRUST_PROXY=1` missing from `backend/.env`; restart the service after adding it |
+| `systemctl reload caddy` times out ("Reload operation timed out") | Add `grace_period 10s` to the Caddyfile's global options block (step 7), then `sudo systemctl restart caddy` once |
+| Caddy won't start: `opening log writer ... /var/log/caddy/...` | Log file is owned by root: `sudo chown -R caddy:caddy /var/log/caddy && sudo systemctl start caddy` |
 | Student import fails with `413` | Increase `request_body max_size` in the Caddyfile |
 | Login works then everyone gets logged out after a deploy | `JWT_SECRET` changed. Keep it constant across deploys |
 

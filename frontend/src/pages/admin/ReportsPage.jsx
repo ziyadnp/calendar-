@@ -22,7 +22,7 @@ import {
   Building2,
   Eye
 } from 'lucide-react';
-import api from '../../services/api';
+import api, { downloadFile } from '../../services/api';
 
 // Curated 5 Essential Institutional Reports (removed redundant/unnecessary reports)
 const CURATED_REPORTS = [
@@ -138,19 +138,19 @@ export default function ReportsPage() {
 
   // Export handlers
   const handleExportExcel = () => {
-    let url = `/api/admin/reports/${selectedReport}?format=excel`;
+    let url = `/admin/reports/${selectedReport}?format=excel`;
     if (categoryFilter !== 'all') url += `&category=${categoryFilter}`;
     if (classFilter !== 'all') url += `&class_name=${encodeURIComponent(classFilter)}`;
     if (searchTerm.trim()) url += `&search=${encodeURIComponent(searchTerm.trim())}`;
-    window.open(url, '_blank');
+    downloadFile(url, `${selectedReport}.xlsx`);
   };
 
   const handleExportCsv = () => {
-    let url = `/api/admin/reports/${selectedReport}?format=csv`;
+    let url = `/admin/reports/${selectedReport}?format=csv`;
     if (categoryFilter !== 'all') url += `&category=${categoryFilter}`;
     if (classFilter !== 'all') url += `&class_name=${encodeURIComponent(classFilter)}`;
     if (searchTerm.trim()) url += `&search=${encodeURIComponent(searchTerm.trim())}`;
-    window.open(url, '_blank');
+    downloadFile(url, `${selectedReport}.csv`);
   };
 
   const handlePrint = () => {

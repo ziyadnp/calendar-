@@ -17,7 +17,7 @@ import {
   AlertCircle,
   UploadCloud
 } from 'lucide-react';
-import api from '../../services/api';
+import api, { downloadFile } from '../../services/api';
 import StudentImportPage from './StudentImportPage';
 
 export default function StudentManagementPage() {
@@ -162,7 +162,7 @@ export default function StudentManagementPage() {
   };
 
   const handleExport = () => {
-    window.open(`/api/admin/reports/students?format=excel`, '_blank');
+    downloadFile('/admin/reports/students?format=excel', 'students.xlsx');
   };
 
   return (

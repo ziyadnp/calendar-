@@ -35,4 +35,34 @@ api.interceptors.response.use(
   }
 );
 
+// Download a protected file (Excel/CSV export). A plain link or window.open can't send the
+// Authorization header, so fetch it through the API client and save the blob instead.
+export async function downloadFile(url, fallbackName = 'download') {
+  try {
+    const res = await api.get(url, { responseType: 'blob' });
+    const disposition = res.headers['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match ? match[1] : fallbackName;
+
+    const blobUrl = URL.createObjectURL(res.data);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  } catch (err) {
+    // Error bodies arrive as a Blob because of responseType: 'blob'
+    let message = 'Failed to download file.';
+    try {
+      const body = JSON.parse(await err.response.data.text());
+      if (body.message) message = body.message;
+    } catch {
+      // Keep the generic message
+    }
+    alert(message);
+  }
+}
+
 export default api;

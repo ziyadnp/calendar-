@@ -20,7 +20,7 @@ import {
   Edit2,
   Calendar
 } from 'lucide-react';
-import api from '../../services/api';
+import api, { downloadFile } from '../../services/api';
 
 export default function RegistrationManagementPage() {
   const [registrations, setRegistrations] = useState([]);
@@ -318,7 +318,7 @@ export default function RegistrationManagementPage() {
   };
 
   const handleExport = () => {
-    window.open(`/api/admin/reports/registrations?format=excel`, '_blank');
+    downloadFile('/admin/reports/registrations?format=excel', 'registrations.xlsx');
   };
 
   return (
