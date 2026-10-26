@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `admins` (
 CREATE TABLE IF NOT EXISTS `students` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `class_name` VARCHAR(50) NOT NULL,
-  `hajer_no` VARCHAR(50) NULL COMMENT ,
+  `hajer_no` VARCHAR(50) NULL,
   `reg_no` VARCHAR(50) NOT NULL UNIQUE,
   `admission_no` VARCHAR(50) NULL,
   `candidate_name` VARCHAR(150) NOT NULL,
