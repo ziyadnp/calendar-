@@ -428,33 +428,33 @@ export default function RegistrationPage() {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+    <div className="mb-8 overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
       {/* Header Banner with Markaz Primary Blue (#0c629e) */}
-      <div className="bg-markaz-700 text-white p-5 md:p-6 text-center">
-        <h2 className="text-xl md:text-2xl font-bold tracking-tight">
+      <div className="p-5 text-center text-white bg-markaz-700 md:p-6">
+        <h2 className="text-xl font-bold tracking-tight md:text-2xl">
           Markaz Calender Distribution 2026
         </h2>
-        <p className="text-xs md:text-sm text-blue-100 mt-1">
+        <p className="mt-1 text-xs text-blue-100 md:text-sm">
           {registrationType === 'inside_kerala'
             ? 'Inside Kerala Student Registration Form'
             : 'Registration for Non-Kerala Students (Outside Kerala)'}
         </p>
       </div>
 
-      <div className="p-5 md:p-8 space-y-8">
+      <div className="p-5 space-y-8 md:p-8">
         {/* STEP 1: AUTOMATIC STUDENT LOOKUP */}
-        <div className="bg-slate-50 p-5 md:p-6 rounded-xl border border-slate-200 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+        <div className="p-5 space-y-4 border bg-slate-50 md:p-6 rounded-xl border-slate-200">
+          <div className="flex flex-col justify-between gap-2 pb-3 border-b sm:flex-row sm:items-center border-slate-200">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-markaz-700 text-white text-xs font-bold flex items-center justify-center">
+              <span className="flex items-center justify-center w-6 h-6 text-xs font-bold text-white rounded-full bg-markaz-700">
                 1
               </span>
-              <h3 className="font-bold text-slate-900 text-base">
+              <h3 className="text-base font-bold text-slate-900">
                 Student Identification / Search
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-medium">
+              <span className="text-xs font-medium text-slate-500">
                 Enter Admission Number or Registration Number
               </span>
 
@@ -462,7 +462,7 @@ export default function RegistrationPage() {
           </div>
 
           <div className="relative">
-            <form onSubmit={handleStudentSearch} className="flex flex-col sm:flex-row gap-3">
+            <form onSubmit={handleStudentSearch} className="flex flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                   <Search className="w-4 h-4" />
@@ -501,7 +501,7 @@ export default function RegistrationPage() {
                         setSearchError('');
                         searchInputRef.current?.focus();
                       }}
-                      className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition"
+                      className="p-1 transition rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                       title="Clear search"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -577,7 +577,7 @@ export default function RegistrationPage() {
                             : 'hover:bg-slate-50 border-l-4 border-transparent'
                         }`}
                       >
-                        <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex items-center min-w-0 gap-3">
                           <div
                             className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
                               isExactMatch
@@ -590,7 +590,7 @@ export default function RegistrationPage() {
 
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 text-sm truncate">
+                              <span className="text-sm font-bold truncate text-slate-900">
                                 {item.candidateName}
                               </span>
                               {isExactMatch && (
@@ -620,7 +620,7 @@ export default function RegistrationPage() {
                         </div>
 
                         {/* Status Tag */}
-                        <div className="shrink-0 text-right">
+                        <div className="text-right shrink-0">
                           {item.isAlreadyRegistered ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                               <AlertCircle className="w-3 h-3 text-amber-600" />
@@ -637,7 +637,7 @@ export default function RegistrationPage() {
                     );
                   })
                 ) : (
-                  <div className="p-4 text-center text-xs text-slate-500 space-y-1">
+                  <div className="p-4 space-y-1 text-xs text-center text-slate-500">
                     <p className="font-semibold text-slate-700">No matching student found</p>
                     <p className="text-[11px] text-slate-400">
                       Check your Admission Number, Registration Number, or name spelling.
@@ -651,24 +651,24 @@ export default function RegistrationPage() {
           {/* Search Error Message */}
           {searchError && (
             <div className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs md:text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
               <span>{searchError}</span>
             </div>
           )}
 
           {/* Student Information Card (Populated after successful lookup) */}
           {student && (
-            <div className="mt-4 bg-white rounded-xl border-2 border-markaz-600 p-4 md:p-5 shadow-sm space-y-4 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="p-4 mt-4 space-y-4 duration-300 bg-white border-2 shadow-sm rounded-xl border-markaz-600 md:p-5 animate-in fade-in">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-markaz-50 rounded-lg text-markaz-700">
+                  <div className="p-2 rounded-lg bg-markaz-50 text-markaz-700">
                     <User className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-slate-900 text-base">
+                    <h4 className="text-base font-bold text-slate-900">
                       {student.candidateName}
                     </h4>
-                    <span className="text-xs text-slate-500 font-medium">
+                    <span className="text-xs font-medium text-slate-500">
                       Verified Student Record
                     </span>
                   </div>
@@ -680,7 +680,7 @@ export default function RegistrationPage() {
               </div>
 
               {/* Student Fields Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs md:text-sm">
+              <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4 md:text-sm">
                 <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <span className="text-slate-500 block text-[11px] uppercase tracking-wider font-semibold">
                     REG NO
@@ -739,20 +739,34 @@ export default function RegistrationPage() {
                   <span className="text-slate-500 block text-[11px] uppercase tracking-wider font-semibold">
                     CALENDARS ALLOTTED
                   </span>
-                  <span className="font-bold text-markaz-700 text-sm mt-0.5 block">
-                    100
-                  </span>
+                  {existingRegistration ? (
+                    // Registered: show the stored allotment (requested + any admin-granted extra)
+                    <span className="font-bold text-markaz-700 text-sm mt-0.5 block">
+                      {existingRegistration.calendars_allotted ?? existingRegistration.calendars_requested ?? 100}
+                      {existingRegistration.additional_calendars > 0 && (
+                        <span className="ml-1 text-[11px] font-semibold text-emerald-700">
+                          (+{existingRegistration.additional_calendars} addl.)
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    // Not registered yet: mirror the quantity selected below
+                    <span className={`font-bold text-sm mt-0.5 block ${quantityError ? 'text-red-600' : 'text-markaz-700'}`}>
+                      {parseInt(calendarQuantity, 10) || 0}
+                      <span className="ml-1 text-[11px] font-medium text-slate-500">Nos</span>
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Already Registered Alert */}
               {existingRegistration && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs md:text-sm space-y-2">
+                <div className="p-4 space-y-2 text-xs border rounded-xl bg-amber-50 border-amber-300 text-amber-900 md:text-sm">
                   <div className="flex items-center gap-2 font-bold text-amber-800">
                     <AlertCircle className="w-4 h-4 text-amber-600" />
                     <span>This Student is Already Registered</span>
                   </div>
-                  <p className="text-xs text-amber-800 leading-relaxed">
+                  <p className="text-xs leading-relaxed text-amber-800">
                     This student record has already been registered on{' '}
                     <strong>{new Date(existingRegistration.submitted_at).toLocaleDateString()}</strong>.
                     {existingRegistration.registration_type === 'inside_kerala' ? (
@@ -789,16 +803,16 @@ export default function RegistrationPage() {
 
         {/* STEP 2: REGISTRATION CATEGORY SELECTOR */}
         <div className="space-y-4">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-            <span className="w-6 h-6 rounded-full bg-markaz-700 text-white text-xs font-bold flex items-center justify-center">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+            <span className="flex items-center justify-center w-6 h-6 text-xs font-bold text-white rounded-full bg-markaz-700">
               2
             </span>
-            <h3 className="font-bold text-slate-900 text-base">
+            <h3 className="text-base font-bold text-slate-900">
               Select Registration Category
             </h3>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => setRegistrationType('inside_kerala')}
@@ -818,12 +832,12 @@ export default function RegistrationPage() {
                 <MapPin className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="font-bold text-slate-900 text-sm">
+                <h4 className="text-sm font-bold text-slate-900">
                   Inside Kerala Registration
                 </h4>
-                <p className="text-xs text-slate-600 mt-1">
+                {/* <p className="mt-1 text-xs text-slate-600">
                  District, Zone, Circle, and Unit.
-                </p>
+                </p> */}
               </div>
             </button>
 
@@ -846,12 +860,12 @@ export default function RegistrationPage() {
                 <Globe className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="font-bold text-slate-900 text-sm">
+                <h4 className="text-sm font-bold text-slate-900">
                   Outside Kerala Registration
                 </h4>
-                <p className="text-xs text-slate-600 mt-1">
+                {/* <p className="mt-1 text-xs text-slate-600">
                   Manual text input entry for non-Kerala  locations.
-                </p>
+                </p> */}
               </div>
             </button>
           </div>
@@ -859,11 +873,11 @@ export default function RegistrationPage() {
 
         {/* STEP 3: REGISTRATION FORM */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-            <span className="w-6 h-6 rounded-full bg-markaz-700 text-white text-xs font-bold flex items-center justify-center">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+            <span className="flex items-center justify-center w-6 h-6 text-xs font-bold text-white rounded-full bg-markaz-700">
               3
             </span>
-            <h3 className="font-bold text-slate-900 text-base">
+            <h3 className="text-base font-bold text-slate-900">
               {registrationType === 'inside_kerala'
                 ? 'Inside Kerala Location Hierarchy'
                 : 'Outside Kerala Location Details'}
@@ -882,25 +896,25 @@ export default function RegistrationPage() {
             <div className="space-y-6">
               {/* Row 1: District, Zone, Circle as Cascading Dropdowns */}
               <div
-                className="rounded-2xl border border-blue-300 p-5 shadow-sm space-y-4"
+                className="p-5 space-y-4 border border-blue-300 shadow-sm rounded-2xl"
                 style={{ backgroundColor: '#CCE1F2' }}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-200/80 pb-2">
+                <div className="flex flex-col justify-between gap-1 pb-2 border-b sm:flex-row sm:items-center border-blue-200/80">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-markaz-700" />
-                    <span className="font-bold text-slate-900 text-sm">
+                    <span className="text-sm font-bold text-slate-900">
                       Select District, Zone & Circle
                     </span>
                   </div>
-                  <span className="text-xs text-blue-900 font-medium">
+                  <span className="text-xs font-medium text-blue-900">
                     Cascade selection: District → Zone → Circle
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   {/* 1. SELECT DISTRICT DROPDOWN */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                    <label className="flex items-center justify-between text-xs font-bold text-slate-900">
                       <span className="flex items-center gap-1">
                         Select District <span className="text-red-600">*</span>
                       </span>
@@ -929,7 +943,7 @@ export default function RegistrationPage() {
 
                   {/* 2. SELECT ZONE DROPDOWN */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                    <label className="flex items-center justify-between text-xs font-bold text-slate-900">
                       <span className="flex items-center gap-1">
                         Select Zone <span className="text-red-600">*</span>
                       </span>
@@ -967,7 +981,7 @@ export default function RegistrationPage() {
 
                   {/* 3. SELECT CIRCLE DROPDOWN */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                    <label className="flex items-center justify-between text-xs font-bold text-slate-900">
                       <span className="flex items-center gap-1">
                         Select Circle <span className="text-red-600">*</span>
                       </span>
@@ -1007,31 +1021,31 @@ export default function RegistrationPage() {
 
               {/* Row 2: SELECT UNIT (Dedicated row with background #FBF7D5) */}
               <div
-                className="rounded-xl border border-amber-300 p-5 shadow-sm space-y-3"
+                className="p-5 space-y-3 border shadow-sm rounded-xl border-amber-300"
                 style={{ backgroundColor: '#FBF7D5' }}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-amber-200 pb-2">
+                <div className="flex flex-col justify-between gap-1 pb-2 border-b sm:flex-row sm:items-center border-amber-200">
                   <div className="space-y-0.5">
                     <label className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                       <span>Select Unit</span>
                       <span className="text-red-600">*</span>
                     </label>
                     {/* Exact Malayalam instruction from original Markaz portal */}
-                    <p className="text-xs text-amber-900 font-medium">
+                    <p className="text-xs font-medium text-amber-900">
                       ഒരു യൂണിറ്റ് ഒരു വിദ്യാർത്ഥിക്ക് മാത്രമേ സെലക്ട് ചെയ്യാൻ സാധിക്കുകയുള്ളൂ. സെലക്ട് ചെയ്ത യൂണിറ്റ് ഇവിടെ കാണിക്കുകയില്ല*
                     </p>
                   </div>
                   {selectedUnitId && (
-                    <span className="text-xs font-bold text-amber-900 bg-amber-200 px-3 py-1 rounded-full self-start sm:self-auto">
+                    <span className="self-start px-3 py-1 text-xs font-bold rounded-full text-amber-900 bg-amber-200 sm:self-auto">
                       1 Unit Selected
                     </span>
                   )}
                 </div>
 
                 {/* Dropdown or quick search for units */}
-                <div className="grid sm:grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                    <label className="block mb-1 text-xs font-bold text-slate-800">
                      Filter Available Units
                     </label>
                     <input
@@ -1040,27 +1054,27 @@ export default function RegistrationPage() {
                       value={unitFilter}
                       onChange={(e) => setUnitFilter(e.target.value)}
                       placeholder={selectedCircleId ? 'Filter available units...' : 'Select a circle first'}
-                      className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-amber-300 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 font-medium"
+                      className="w-full px-3 py-2 text-xs font-medium bg-white border rounded-lg border-amber-300 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
                     />
                   </div>
                 </div>
 
                 {/* Available Units Grid / Checkbox list */}
-                <div className="max-h-60 overflow-y-auto custom-scrollbar p-2 bg-white/60 rounded-xl border border-amber-200">
+                <div className="p-2 overflow-y-auto border max-h-60 custom-scrollbar bg-white/60 rounded-xl border-amber-200">
                   {!selectedCircleId ? (
-                    <div className="p-6 text-center text-xs text-slate-600">
+                    <div className="p-6 text-xs text-center text-slate-600">
                       Please select a Circle above to view currently available units.
                     </div>
                   ) : loadingUnits ? (
-                    <div className="p-6 text-center text-xs text-slate-600 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading available units from database...
+                    <div className="flex items-center justify-center p-6 text-xs text-center text-slate-600">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading available units from database...
                     </div>
                   ) : units.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-amber-900">
+                    <div className="p-6 text-xs text-center text-amber-900">
                       No units available in this circle. All units may already have been confirmed by other students.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
                       {units
                         .filter((u) => u.name.toLowerCase().includes(unitFilter.toLowerCase()))
                         .map((u) => {
@@ -1081,7 +1095,7 @@ export default function RegistrationPage() {
                                   // Enforce strict single-selection logic: clicking another replaces current
                                   setSelectedUnitId(isChecked ? null : u.id);
                                 }}
-                                className="w-4 h-4 rounded text-amber-600 focus:ring-0 cursor-pointer"
+                                className="w-4 h-4 rounded cursor-pointer text-amber-600 focus:ring-0"
                               />
                               <span className="truncate">{u.name}</span>
                             </label>
@@ -1098,18 +1112,18 @@ export default function RegistrationPage() {
                Exact replica of https://fr.markaz.in/reg-form-non-kerala-jamia-students.php
                Does NOT use checkbox hierarchy. Uses manual text inputs.
                ======================================================== */
-            <div className="bg-slate-50 p-5 md:p-6 rounded-xl border border-slate-200 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-5 space-y-4 border bg-slate-50 md:p-6 rounded-xl border-slate-200">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {/* State Dropdown */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <label className="flex items-center gap-1 text-xs font-bold text-slate-800">
                     <span>State</span>
                     <span className="text-red-600">*</span>
                   </label>
                   <select
                     value={outsideForm.state_name}
                     onChange={(e) => setOutsideForm({ ...outsideForm, state_name: e.target.value })}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-markaz-600 font-medium"
+                    className="w-full px-3 py-2 text-sm font-medium bg-white border rounded-lg border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-markaz-600"
                     required
                   >
                     {INDIAN_STATES.map((s) => (
@@ -1122,7 +1136,7 @@ export default function RegistrationPage() {
 
                 {/* District Text Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <label className="flex items-center gap-1 text-xs font-bold text-slate-800">
                     <span>District</span>
                     <span className="text-red-600">*</span>
                   </label>
@@ -1131,14 +1145,14 @@ export default function RegistrationPage() {
                     value={outsideForm.outside_district}
                     onChange={(e) => setOutsideForm({ ...outsideForm, outside_district: e.target.value })}
                     placeholder="Enter district name"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600 font-medium"
+                    className="w-full px-3 py-2 text-sm font-medium bg-white border rounded-lg border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600"
                     required
                   />
                 </div>
 
                 {/* Zone Text Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <label className="flex items-center gap-1 text-xs font-bold text-slate-800">
                     <span>Zone</span>
                     <span className="text-red-600">*</span>
                   </label>
@@ -1147,14 +1161,14 @@ export default function RegistrationPage() {
                     value={outsideForm.outside_zone}
                     onChange={(e) => setOutsideForm({ ...outsideForm, outside_zone: e.target.value })}
                     placeholder="Enter zone name"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600 font-medium"
+                    className="w-full px-3 py-2 text-sm font-medium bg-white border rounded-lg border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600"
                     required
                   />
                 </div>
 
                 {/* Circle Text Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <label className="flex items-center gap-1 text-xs font-bold text-slate-800">
                     <span>Circle</span>
                     <span className="text-red-600">*</span>
                   </label>
@@ -1163,14 +1177,14 @@ export default function RegistrationPage() {
                     value={outsideForm.outside_circle}
                     onChange={(e) => setOutsideForm({ ...outsideForm, outside_circle: e.target.value })}
                     placeholder="Enter circle name"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600 font-medium"
+                    className="w-full px-3 py-2 text-sm font-medium bg-white border rounded-lg border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600"
                     required
                   />
                 </div>
 
                 {/* Unit Text Input */}
                 <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  <label className="flex items-center gap-1 text-xs font-bold text-slate-800">
                     <span>Unit</span>
                     <span className="text-red-600">*</span>
                   </label>
@@ -1179,7 +1193,7 @@ export default function RegistrationPage() {
                     value={outsideForm.outside_unit}
                     onChange={(e) => setOutsideForm({ ...outsideForm, outside_unit: e.target.value })}
                     placeholder="Enter unit name"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600 font-medium"
+                    className="w-full px-3 py-2 text-sm font-medium bg-white border rounded-lg border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-markaz-600"
                     required
                   />
                 </div>
@@ -1188,18 +1202,18 @@ export default function RegistrationPage() {
           )}
 
           {/* Calendars Wanted Notice (Student Selectable Quota) */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col justify-between gap-3 p-4 border bg-slate-50 rounded-xl border-slate-200 sm:flex-row sm:items-center">
             <div className="space-y-0.5">
-              <label htmlFor="calendarQuantityInput" className="text-xs font-bold text-markaz-700 block cursor-pointer">
+              <label htmlFor="calendarQuantityInput" className="block text-xs font-bold cursor-pointer text-markaz-700">
                 Calendars Required / Quota <span className="text-red-500">*</span>
               </label>
-              <p className="text-xs text-slate-600 font-medium">
+              <p className="text-xs font-medium text-slate-600">
                 ഓരോ വിദ്യാർത്ഥിക്കും 100 കലണ്ടർ ലഭിക്കും.
               </p>
             </div>
-            <div className="flex flex-col sm:items-end gap-1 w-full sm:w-auto">
+            <div className="flex flex-col w-full gap-1 sm:items-end sm:w-auto">
               <div className="flex items-center gap-2">
-                <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white shadow-2xs overflow-hidden focus-within:ring-2 focus-within:ring-markaz-600 focus-within:border-markaz-600">
+                <div className="inline-flex items-center overflow-hidden bg-white border rounded-lg border-slate-300 shadow-2xs focus-within:ring-2 focus-within:ring-markaz-600 focus-within:border-markaz-600">
                   <button
                     type="button"
                     disabled={(parseInt(calendarQuantity, 10) || 100) <= 100}
@@ -1284,7 +1298,7 @@ export default function RegistrationPage() {
 
           {/* Selected Place & Location Confirmation Summary */}
           {(registrationType === 'inside_kerala' ? selectedUnitId : (outsideForm.outside_unit || outsideForm.outside_district)) && (
-            <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 text-xs space-y-2">
+            <div className="p-4 space-y-2 text-xs border border-blue-200 rounded-xl bg-blue-50/70">
               <span className="text-[11px] font-bold uppercase tracking-wider text-markaz-800 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-markaz-700" />
                 <span>Selected Place & Location Summary for Confirmation</span>
@@ -1300,7 +1314,7 @@ export default function RegistrationPage() {
                   <span className="text-slate-500">Circle:</span>
                   <span className="font-bold text-slate-900">{circles.find(c => c.id === selectedCircleId)?.name || '—'}</span>
                   <span className="text-slate-400">→</span>
-                  <span className="text-amber-900 font-bold">Unit:</span>
+                  <span className="font-bold text-amber-900">Unit:</span>
                   <span className="font-black px-2 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
                     {units.find(u => u.id === selectedUnitId)?.name || '—'}
                   </span>
@@ -1319,7 +1333,7 @@ export default function RegistrationPage() {
                   <span className="text-slate-500">Circle:</span>
                   <span className="font-bold text-slate-900">{outsideForm.outside_circle || '—'}</span>
                   <span className="text-slate-400">→</span>
-                  <span className="text-amber-900 font-bold">Unit:</span>
+                  <span className="font-bold text-amber-900">Unit:</span>
                   <span className="font-black px-2 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
                     {outsideForm.outside_unit || '—'}
                   </span>
@@ -1329,7 +1343,7 @@ export default function RegistrationPage() {
           )}
 
           {/* Confirmation Checkbox (Exact original label) */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+          <div className="p-4 border rounded-xl bg-slate-50 border-slate-200">
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -1338,7 +1352,7 @@ export default function RegistrationPage() {
                 className="mt-0.5 w-4 h-4 rounded text-markaz-700 focus:ring-markaz-600 cursor-pointer"
                 required
               />
-              <span className="text-xs md:text-sm font-semibold text-red-600">
+              <span className="text-xs font-semibold text-red-600 md:text-sm">
                 Complete and make sure all details before submit*
               </span>
             </label>
@@ -1353,7 +1367,7 @@ export default function RegistrationPage() {
           )}
 
           {/* Submit Button */}
-          <div className="text-center pt-2">
+          <div className="pt-2 text-center">
             <button
               type="submit"
               disabled={submitting || !student || !!existingRegistration}

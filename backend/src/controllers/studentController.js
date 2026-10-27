@@ -51,6 +51,7 @@ async function lookupStudent(req, res, next) {
     // Check if student has already registered
     const [existingRegistrations] = await db.query(
       `SELECT r.id, r.registration_code, r.registration_type, r.status, r.submitted_at,
+              r.calendars_requested, r.additional_calendars, r.calendars_allotted,
               d.name AS district_name, z.name AS zone_name, c.name AS circle_name, u.name AS unit_name,
               r.state_name, r.outside_district, r.outside_zone, r.outside_circle, r.outside_unit
        FROM registrations r
