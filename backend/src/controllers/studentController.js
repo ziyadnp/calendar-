@@ -75,7 +75,7 @@ async function lookupStudent(req, res, next) {
       reg.units = reg.registration_type === 'inside_kerala' ? await getRegistrationUnits(reg.id) : [];
     }
 
-    // Shared unit slots: Kerala units + Outside Kerala (counts as 1)
+    // Shared unit slots: Kerala units + one per Outside Kerala registration
     const { max_units_per_student: maxUnits } = await getSettings();
     const unitsHeld = existingRegistrations.reduce(
       (sum, r) => sum + (r.registration_type === 'inside_kerala' ? Number(r.unit_count) || 0 : 1),
@@ -147,10 +147,9 @@ async function liveSearchStudents(req, res, next) {
                 SELECT 1 FROM registrations r
                 WHERE r.student_id = s.id AND r.status IN ('pending', 'approved')
               ) AS is_already_registered,
-              EXISTS (
-                SELECT 1 FROM registrations r
-                WHERE r.student_id = s.id AND r.status IN ('pending', 'approved') AND r.registration_type = 'outside_kerala'
-              ) AS has_outside_registration,
+              (SELECT COUNT(*) FROM registrations r
+               WHERE r.student_id = s.id AND r.status IN ('pending', 'approved') AND r.registration_type = 'outside_kerala'
+              ) AS outside_registration_count,
               (SELECT COUNT(*) FROM unit_assignments ua
                JOIN registrations r ON r.id = ua.registration_id
                WHERE r.student_id = s.id AND r.status IN ('pending', 'approved') AND ua.status = 'active') AS held_unit_count
@@ -174,13 +173,13 @@ async function liveSearchStudents(req, res, next) {
       ]
     );
 
-    // Unit slots left under the admin limit: Kerala units + Outside Kerala (counts as 1)
+    // Unit slots left under the admin limit: Kerala units + one per Outside Kerala registration
     const { max_units_per_student: maxUnits } = await getSettings();
 
     const formatted = students.map((s) => {
       const isRegistered = Boolean(s.is_already_registered);
-      const hasOutside = Boolean(s.has_outside_registration);
-      const unitsHeld = (Number(s.held_unit_count) || 0) + (hasOutside ? 1 : 0);
+      const outsideCount = Number(s.outside_registration_count) || 0;
+      const unitsHeld = (Number(s.held_unit_count) || 0) + outsideCount;
       const unitSlotsLeft = Math.max(0, maxUnits - unitsHeld);
       return {
         id: s.id,
@@ -194,7 +193,7 @@ async function liveSearchStudents(req, res, next) {
         hajerNo: s.hajer_no,
         hall_no: s.hall_no,
         isAlreadyRegistered: isRegistered,
-        hasOutsideRegistration: hasOutside,
+        outsideRegistrationCount: outsideCount,
         unitsHeld,
         maxUnits,
         unitSlotsLeft

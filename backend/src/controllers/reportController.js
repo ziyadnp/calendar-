@@ -1,6 +1,7 @@
 const ExcelJS = require('exceljs');
 const db = require('../config/db');
 const { REGISTRATION_UNIT_NAMES } = require('../utils/sqlFragments');
+const { attachRegistrationUnits } = require('../utils/registrationUnits');
 
 /**
  * Helper to generate and stream Excel file from columns and rows
@@ -22,7 +23,8 @@ async function streamExcelReport(res, filename, sheetName, columns, rows) {
 
   rows.forEach((r, idx) => {
     const row = worksheet.addRow({ sl_no: idx + 1, ...r });
-    row.alignment = { vertical: 'middle' };
+    // wrapText so multi-unit cells (one line per unit) show every line
+    row.alignment = { vertical: 'middle', wrapText: true };
   });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -119,15 +121,35 @@ async function getReport(req, res, next) {
         }
 
         if (search) {
-          sql += ` AND (s.candidate_name LIKE ? OR s.reg_no LIKE ? OR r.registration_code LIKE ? OR u.name LIKE ? OR d.name LIKE ?)`;
+          sql += ` AND (s.candidate_name LIKE ? OR s.reg_no LIKE ? OR r.registration_code LIKE ? OR u.name LIKE ? OR d.name LIKE ?
+                   OR r.state_name LIKE ? OR r.outside_unit LIKE ?
+                   OR EXISTS (SELECT 1 FROM unit_assignments ua_s
+                              JOIN units un_s ON un_s.id = ua_s.unit_id
+                              JOIN circles c_s ON c_s.id = un_s.circle_id
+                              JOIN zones z_s ON z_s.id = c_s.zone_id
+                              JOIN districts d_s ON d_s.id = z_s.district_id
+                              WHERE ua_s.registration_id = r.id AND ua_s.status = 'active'
+                                AND (un_s.name LIKE ? OR d_s.name LIKE ?)))`;
           const searchTerm = `%${search}%`;
-          params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+          params.push(...Array(9).fill(searchTerm));
         }
 
         sql += ` ORDER BY r.submitted_at DESC`;
 
         const [results] = await db.query(sql, params);
         rows = results;
+
+        // A Kerala registration can hold several units in different districts. List each
+        // unit with its own district, one per line, so the two columns stay aligned
+        // (the web table, print, CSV and Excel all read these same fields).
+        await attachRegistrationUnits(rows.filter((r) => r.registration_type === 'inside_kerala'));
+        for (const r of rows) {
+          if (r.units && r.units.length > 0) {
+            r.location_primary = r.units.map((un) => un.district_name).join('\n');
+            r.location_unit = r.units.map((un) => un.unit_name).join('\n');
+          }
+          delete r.units;
+        }
 
         // Calculate summary KPIs
         const totalRegistrations = rows.length;

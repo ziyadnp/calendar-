@@ -106,20 +106,33 @@ export default function RegistrationPage() {
   // A student can hold one Inside Kerala registration (several units) and one Outside Kerala
   // registration. They share the admin's unit limit: Kerala units + Outside Kerala (counts as 1).
   const insideReg = studentRegistrations.find((r) => r.registration_type === 'inside_kerala') || null;
-  const outsideReg = studentRegistrations.find((r) => r.registration_type === 'outside_kerala') || null;
+  // Outside Kerala: one unit per registration, any number of registrations within the limit
+  const outsideRegs = studentRegistrations.filter((r) => r.registration_type === 'outside_kerala');
   const isRegistered = studentRegistrations.length > 0;
-  const heldUnits = (insideReg ? Number(insideReg.unit_count) || 0 : 0) + (outsideReg ? 1 : 0);
+  const heldUnits = (insideReg ? Number(insideReg.unit_count) || 0 : 0) + outsideRegs.length;
   const slotsLeft = Math.max(0, maxUnits - heldUnits);
   const canRegisterInside = slotsLeft > 0;
-  const canRegisterOutside = !outsideReg && slotsLeft > 0;
+  const canRegisterOutside = slotsLeft > 0;
   const canSubmitSelected = registrationType === 'inside_kerala' ? canRegisterInside : canRegisterOutside;
   // A Kerala submission from a student who already has a Kerala registration adds units to it
   const canAddUnits = registrationType === 'inside_kerala' && Boolean(insideReg) && canRegisterInside;
   // How many Kerala units can be picked in this submission
   const unitLimit = slotsLeft;
+  // First registration needs at least 100 calendars; later ones (student already holds
+  // calendars) can request any amount from 0
+  const minCalendars = isRegistered ? 0 : 100;
+  const toQuantity = (value) => {
+    const n = parseInt(value, 10);
+    return Number.isNaN(n) ? minCalendars : n;
+  };
   // Calendars already allotted to the student, across all their registrations
   const allottedOf = (reg) => Number(reg?.calendars_allotted ?? reg?.calendars_requested) || 0;
   const registeredCalendarTotal = studentRegistrations.reduce((sum, r) => sum + allottedOf(r), 0);
+  // Per-registration breakdown, e.g. "Kerala 120 + Outside 20 + Outside 100"
+  const calendarBreakdown = [
+    ...(insideReg ? [`Kerala ${allottedOf(insideReg)}`] : []),
+    ...outsideRegs.map((r) => `Outside ${allottedOf(r)}`)
+  ].join(' + ');
 
   // Keep the selected category on one the student is still allowed to submit
   useEffect(() => {
@@ -271,6 +284,9 @@ export default function RegistrationPage() {
               : [res.data.existingRegistration].filter(Boolean)
           );
         }
+        // Default quantity: 100 for a first registration, 0 extra for a registered student
+        setCalendarQuantity(res.data.isAlreadyRegistered ? 0 : 100);
+        setQuantityError('');
       }
     } catch (err) {
       if (err.response && err.response.data && err.response.data.message) {
@@ -384,9 +400,7 @@ export default function RegistrationPage() {
 
     if (isRegistered && !canSubmitSelected) {
       setSubmitError(
-        registrationType === 'outside_kerala' && outsideReg
-          ? 'You already have an Outside Kerala registration. Only one is allowed.'
-          : `You have already used all ${maxUnits} unit slot${maxUnits === 1 ? '' : 's'}. No further registrations are allowed.`
+        `You have already used all ${maxUnits} unit slot${maxUnits === 1 ? '' : 's'}. No further registrations are allowed.`
       );
       return;
     }
@@ -400,8 +414,10 @@ export default function RegistrationPage() {
     const parsedQuantity = canAddUnits
       ? Number(insideReg.calendars_requested) || 100
       : parseInt(calendarQuantity, 10);
-    if (!canAddUnits && (!parsedQuantity || isNaN(parsedQuantity) || parsedQuantity < 100 || !Number.isInteger(Number(calendarQuantity)))) {
-      setSubmitError('Minimum 100 calendars required (e.g., 100 Nos or more).');
+    if (!canAddUnits && (calendarQuantity === '' || isNaN(parsedQuantity) || parsedQuantity < minCalendars || !Number.isInteger(Number(calendarQuantity)))) {
+      setSubmitError(minCalendars > 0
+        ? 'Minimum 100 calendars required (e.g., 100 Nos or more).'
+        : 'Please enter a calendar quantity of 0 or more.');
       return;
     }
 
@@ -877,7 +893,7 @@ export default function RegistrationPage() {
                       {registeredCalendarTotal}
                       {studentRegistrations.length > 1 ? (
                         <span className="block text-[11px] font-medium text-slate-500">
-                          Kerala {allottedOf(insideReg)} + Outside {allottedOf(outsideReg)}
+                          {calendarBreakdown}
                         </span>
                       ) : studentRegistrations[0].additional_calendars > 0 && (
                         <span className="ml-1 text-[11px] font-semibold text-emerald-700">
@@ -1014,7 +1030,7 @@ export default function RegistrationPage() {
                           </li>
                           {canRegisterOutside && (
                             <li>
-                              Register <strong>Outside Kerala</strong> (uses 1 slot, with its own calendar quantity)
+                              Register {outsideRegs.length > 0 ? 'another ' : ''}<strong>Outside Kerala</strong> unit (uses 1 slot, with its own calendar quantity)
                             </li>
                           )}
                         </ul>
@@ -1037,7 +1053,7 @@ export default function RegistrationPage() {
                               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition active:scale-95"
                             >
                               <Globe className="w-3.5 h-3.5" />
-                              <span>Register Outside Kerala</span>
+                              <span>{outsideRegs.length > 0 ? 'Register Another Outside Kerala' : 'Register Outside Kerala'}</span>
                             </button>
                           )}
                         </div>
@@ -1055,6 +1071,10 @@ export default function RegistrationPage() {
           )}
         </div>
 
+        {/* Steps 2 and 3 are hidden once a registered student has used every unit slot:
+            there is nothing left for them to submit */}
+        {!(isRegistered && slotsLeft === 0) && (
+        <>
         {/* STEP 2: REGISTRATION CATEGORY SELECTOR */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
@@ -1127,10 +1147,10 @@ export default function RegistrationPage() {
                 </h4>
                 {isRegistered && (
                   <p className="mt-1 text-xs text-slate-600">
-                    {outsideReg
-                      ? `Already registered (${outsideReg.registration_code})`
-                      : !canRegisterOutside
+                    {!canRegisterOutside
                       ? 'No unit slots left'
+                      : outsideRegs.length > 0
+                      ? `${outsideRegs.length} registered · add another (uses 1 slot, own calendar quantity)`
                       : 'Uses 1 unit slot, with its own calendar quantity'}
                   </p>
                 )}
@@ -1529,9 +1549,7 @@ export default function RegistrationPage() {
               <div className="space-y-0.5">
                 <span className="block text-xs font-bold text-markaz-700">Calendars Allotted (Total)</span>
                 <p className="text-xs font-medium text-slate-600">
-                  {outsideReg
-                    ? `Kerala ${allottedOf(insideReg)} + Outside ${allottedOf(outsideReg)}. `
-                    : ''}
+                  {outsideRegs.length > 0 ? `${calendarBreakdown}. ` : ''}
                   Unchanged when adding units. Contact the Markaz administration to change it.
                 </p>
               </div>
@@ -1546,36 +1564,41 @@ export default function RegistrationPage() {
                 Calendars Required / Quota <span className="text-red-500">*</span>
               </label>
               <p className="text-xs font-medium text-slate-600">
-                ഓരോ വിദ്യാർത്ഥിക്കും 100 കലണ്ടർ ലഭിക്കും.
+                {isRegistered
+                  ? `നിങ്ങൾക്ക് ഇതിനകം ${registeredCalendarTotal} കലണ്ടർ ഉണ്ട്. ഈ രജിസ്ട്രേഷന് ആവശ്യമായ കലണ്ടർ മാത്രം ചേർക്കുക (0 അല്ലെങ്കിൽ കൂടുതൽ).`
+                  : 'ഓരോ വിദ്യാർത്ഥിക്കും 100 കലണ്ടർ ലഭിക്കും.'}
               </p>
+              {isRegistered && (
+                <p className="text-[11px] font-medium text-slate-500">
+                  You already have {registeredCalendarTotal} calendars. Enter only the extra calendars needed for this registration (0 or more).
+                </p>
+              )}
             </div>
             <div className="flex flex-col w-full gap-1 sm:items-end sm:w-auto">
               <div className="flex items-center gap-2">
                 <div className="inline-flex items-center overflow-hidden bg-white border rounded-lg border-slate-300 shadow-2xs focus-within:ring-2 focus-within:ring-markaz-600 focus-within:border-markaz-600">
                   <button
                     type="button"
-                    disabled={(parseInt(calendarQuantity, 10) || 100) <= 100}
+                    disabled={toQuantity(calendarQuantity) <= minCalendars}
                     onClick={() => {
-                      const current = parseInt(calendarQuantity, 10) || 100;
-                      const next = Math.max(100, current - 10);
+                      const next = Math.max(minCalendars, toQuantity(calendarQuantity) - 10);
                       setCalendarQuantity(next);
                       setQuantityError('');
                     }}
-                    title="Decrease by 10 (minimum 100)"
+                    title={`Decrease by 10 (minimum ${minCalendars})`}
                     className="px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed border-r border-slate-200 font-bold transition select-none"
                   >
                     -10
                   </button>
                   <button
                     type="button"
-                    disabled={(parseInt(calendarQuantity, 10) || 100) <= 100}
+                    disabled={toQuantity(calendarQuantity) <= minCalendars}
                     onClick={() => {
-                      const current = parseInt(calendarQuantity, 10) || 100;
-                      const next = Math.max(100, current - 1);
+                      const next = Math.max(minCalendars, toQuantity(calendarQuantity) - 1);
                       setCalendarQuantity(next);
                       setQuantityError('');
                     }}
-                    title="Decrease by 1 (minimum 100)"
+                    title={`Decrease by 1 (minimum ${minCalendars})`}
                     className="px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed border-r border-slate-200 font-bold transition select-none"
                   >
                     -
@@ -1583,15 +1606,15 @@ export default function RegistrationPage() {
                   <input
                     id="calendarQuantityInput"
                     type="number"
-                    min="100"
+                    min={minCalendars}
                     step="1"
                     value={calendarQuantity}
                     onChange={(e) => {
                       const val = e.target.value;
                       setCalendarQuantity(val);
                       const num = parseInt(val, 10);
-                      if (!val || isNaN(num) || num < 100 || !Number.isInteger(Number(val))) {
-                        setQuantityError('Minimum 100 calendars required');
+                      if (val === '' || isNaN(num) || num < minCalendars || !Number.isInteger(Number(val))) {
+                        setQuantityError(minCalendars > 0 ? 'Minimum 100 calendars required' : 'Enter 0 or more');
                       } else {
                         setQuantityError('');
                       }
@@ -1604,8 +1627,7 @@ export default function RegistrationPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const current = parseInt(calendarQuantity, 10) || 100;
-                      setCalendarQuantity(current + 1);
+                      setCalendarQuantity(toQuantity(calendarQuantity) + 1);
                       setQuantityError('');
                     }}
                     title="Increase by 1"
@@ -1616,8 +1638,7 @@ export default function RegistrationPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const current = parseInt(calendarQuantity, 10) || 100;
-                      setCalendarQuantity(current + 10);
+                      setCalendarQuantity(toQuantity(calendarQuantity) + 10);
                       setQuantityError('');
                     }}
                     title="Increase by 10"
@@ -1742,6 +1763,8 @@ export default function RegistrationPage() {
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>
   );

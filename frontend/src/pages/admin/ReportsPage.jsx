@@ -637,6 +637,19 @@ export default function ReportsPage() {
                             );
                           }
 
+                          // Multi-unit registrations: one line per unit, aligned across District and Unit columns
+                          if (typeof val === 'string' && val.includes('\n')) {
+                            return (
+                              <td key={col.key} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap align-top">
+                                {val.split('\n').map((line, i) => (
+                                  <div key={i} className={i > 0 ? 'mt-1 pt-1 border-t border-dashed border-slate-200' : ''}>
+                                    {line}
+                                  </div>
+                                ))}
+                              </td>
+                            );
+                          }
+
                           return (
                             <td key={col.key} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
                               {val !== null && val !== undefined && val !== '' ? val.toString() : '-'}

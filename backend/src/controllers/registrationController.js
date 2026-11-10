@@ -83,8 +83,9 @@ async function submitRegistration(req, res, next) {
     const student = students[0];
 
     // 2. Existing active registrations. Rules:
-    //    - at most one Inside Kerala and one Outside Kerala registration per student
-    //    - Kerala units + Outside Kerala (counts as 1 unit) <= max_units_per_student
+    //    - at most one Inside Kerala registration (holding several units); any number of
+    //      Outside Kerala registrations (one unit each)
+    //    - Kerala units + Outside Kerala registrations <= max_units_per_student
     //    - submitting Inside Kerala again adds units to the existing Kerala registration
     const [existingRegs] = await connection.query(
       `SELECT id, registration_code, registration_type, calendars_requested, additional_calendars, calendars_allotted
@@ -94,7 +95,7 @@ async function submitRegistration(req, res, next) {
       [student_id]
     );
     const insideReg = existingRegs.find((r) => r.registration_type === 'inside_kerala') || null;
-    const outsideReg = existingRegs.find((r) => r.registration_type === 'outside_kerala') || null;
+    const outsideRegCount = existingRegs.filter((r) => r.registration_type === 'outside_kerala').length;
     const maxUnits = settings.max_units_per_student;
 
     let insideUnitCount = 0;
@@ -105,17 +106,8 @@ async function submitRegistration(req, res, next) {
       );
       insideUnitCount = held.total;
     }
-    // Total unit slots used by this student across both registration types
-    const heldUnitCount = insideUnitCount + (outsideReg ? 1 : 0);
-
-    if (registration_type === 'outside_kerala' && outsideReg) {
-      await connection.rollback();
-      connection.release();
-      return res.status(409).json({
-        success: false,
-        message: `Student ${student.candidate_name} has already registered Outside Kerala under code ${outsideReg.registration_code}. Only one Outside Kerala registration is allowed.`
-      });
-    }
+    // Total unit slots used by this student: Kerala units + one per Outside Kerala registration
+    const heldUnitCount = insideUnitCount + outsideRegCount;
 
     if (heldUnitCount >= maxUnits) {
       await connection.rollback();
@@ -134,20 +126,24 @@ async function submitRegistration(req, res, next) {
     let regCode = existingReg ? existingReg.registration_code : await generateRegistrationCode(connection);
     let placeDetails = {};
 
-    // Validate student-selectable calendar quantity (minimum 100, default 100).
-    // Adding units to an existing registration keeps its calendar quantities.
+    // Validate student-selectable calendar quantity.
+    // A student's first registration needs at least 100; later registrations (they already
+    // hold calendars) may request any amount from 0. Adding units keeps the existing quantities.
+    const minQuota = existingRegs.length > 0 ? 0 : 100;
     let requestedQuota = existingReg ? existingReg.calendars_requested : null;
     if (!existingReg) {
       const rawRequested = req.body.calendars_requested !== undefined
         ? req.body.calendars_requested
-        : (req.body.calendar_quantity !== undefined ? req.body.calendar_quantity : (req.body.calendars_required !== undefined ? req.body.calendars_required : 100));
+        : (req.body.calendar_quantity !== undefined ? req.body.calendar_quantity : (req.body.calendars_required !== undefined ? req.body.calendars_required : minQuota));
       requestedQuota = parseInt(rawRequested, 10);
-      if (isNaN(requestedQuota) || requestedQuota < 100) {
+      if (isNaN(requestedQuota) || requestedQuota < minQuota) {
         await connection.rollback();
         connection.release();
         return res.status(400).json({
           success: false,
-          message: 'Minimum 100 calendars required (must be at least 100 Nos).'
+          message: minQuota > 0
+            ? 'Minimum 100 calendars required (must be at least 100 Nos).'
+            : 'Calendar quantity must be 0 or more.'
         });
       }
     }
