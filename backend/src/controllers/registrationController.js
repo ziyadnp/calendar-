@@ -1,6 +1,9 @@
 const db = require('../config/db');
 const env = require('../config/env');
 const { logAction } = require('../utils/auditLogger');
+const { getSettings } = require('../utils/settings');
+const { REGISTRATION_UNIT_NAMES } = require('../utils/sqlFragments');
+const { getRegistrationUnits, attachRegistrationUnits } = require('../utils/registrationUnits');
 
 /**
  * Generate a unique registration code (e.g. MKZ-2026-0042)
@@ -23,11 +26,9 @@ async function submitRegistration(req, res, next) {
     const {
       student_id,
       registration_type, // 'inside_kerala' or 'outside_kerala'
-      // Inside Kerala
-      district_id,
-      zone_id,
-      circle_id,
+      // Inside Kerala (district/zone/circle are derived from the selected units)
       unit_id,
+      unit_ids,
       // Outside Kerala
       state_name,
       outside_district,
@@ -52,6 +53,15 @@ async function submitRegistration(req, res, next) {
       });
     }
 
+    const settings = await getSettings();
+    if (!settings.registration_open) {
+      return res.status(403).json({
+        success: false,
+        registrationClosed: true,
+        message: settings.registration_closed_message
+      });
+    }
+
     connection = await db.getConnection();
     await connection.beginTransaction();
 
@@ -72,118 +82,195 @@ async function submitRegistration(req, res, next) {
 
     const student = students[0];
 
-    // 2. Check if student already has an active or pending registration
+    // 2. Existing active registrations. Rules:
+    //    - at most one Inside Kerala and one Outside Kerala registration per student
+    //    - Kerala units + Outside Kerala (counts as 1 unit) <= max_units_per_student
+    //    - submitting Inside Kerala again adds units to the existing Kerala registration
     const [existingRegs] = await connection.query(
-      `SELECT id, registration_code FROM registrations 
+      `SELECT id, registration_code, registration_type, calendars_requested, additional_calendars, calendars_allotted
+       FROM registrations
        WHERE student_id = ? AND status IN ('approved', 'pending')
        FOR UPDATE`,
       [student_id]
     );
+    const insideReg = existingRegs.find((r) => r.registration_type === 'inside_kerala') || null;
+    const outsideReg = existingRegs.find((r) => r.registration_type === 'outside_kerala') || null;
+    const maxUnits = settings.max_units_per_student;
 
-    if (existingRegs.length > 0) {
+    let insideUnitCount = 0;
+    if (insideReg) {
+      const [[held]] = await connection.query(
+        `SELECT COUNT(*) AS total FROM unit_assignments WHERE registration_id = ? AND status = 'active'`,
+        [insideReg.id]
+      );
+      insideUnitCount = held.total;
+    }
+    // Total unit slots used by this student across both registration types
+    const heldUnitCount = insideUnitCount + (outsideReg ? 1 : 0);
+
+    if (registration_type === 'outside_kerala' && outsideReg) {
       await connection.rollback();
       connection.release();
       return res.status(409).json({
         success: false,
-        message: `Student ${student.candidate_name} has already registered under code ${existingRegs[0].registration_code}. Duplicate registrations are not permitted.`
+        message: `Student ${student.candidate_name} has already registered Outside Kerala under code ${outsideReg.registration_code}. Only one Outside Kerala registration is allowed.`
       });
     }
 
-    let registrationId;
-    let regCode = await generateRegistrationCode(connection);
-    let placeDetails = {};
-
-    // Validate student-selectable calendar quantity (minimum 100, default 100)
-    const rawRequested = req.body.calendars_requested !== undefined
-      ? req.body.calendars_requested
-      : (req.body.calendar_quantity !== undefined ? req.body.calendar_quantity : (req.body.calendars_required !== undefined ? req.body.calendars_required : 100));
-    const requestedQuota = parseInt(rawRequested, 10);
-    if (isNaN(requestedQuota) || requestedQuota < 100) {
+    if (heldUnitCount >= maxUnits) {
       await connection.rollback();
       connection.release();
-      return res.status(400).json({
+      const codes = existingRegs.map((r) => r.registration_code).join(', ');
+      return res.status(409).json({
         success: false,
-        message: 'Minimum 100 calendars required (must be at least 100 Nos).'
+        message: `Student ${student.candidate_name} has already used all ${maxUnits} unit slot${maxUnits === 1 ? '' : 's'} (registration ${codes}). No further registrations are allowed.`
       });
+    }
+
+    // Inside Kerala resubmission adds units to the existing Kerala registration
+    const existingReg = registration_type === 'inside_kerala' ? insideReg : null;
+
+    let registrationId = existingReg ? existingReg.id : null;
+    let regCode = existingReg ? existingReg.registration_code : await generateRegistrationCode(connection);
+    let placeDetails = {};
+
+    // Validate student-selectable calendar quantity (minimum 100, default 100).
+    // Adding units to an existing registration keeps its calendar quantities.
+    let requestedQuota = existingReg ? existingReg.calendars_requested : null;
+    if (!existingReg) {
+      const rawRequested = req.body.calendars_requested !== undefined
+        ? req.body.calendars_requested
+        : (req.body.calendar_quantity !== undefined ? req.body.calendar_quantity : (req.body.calendars_required !== undefined ? req.body.calendars_required : 100));
+      requestedQuota = parseInt(rawRequested, 10);
+      if (isNaN(requestedQuota) || requestedQuota < 100) {
+        await connection.rollback();
+        connection.release();
+        return res.status(400).json({
+          success: false,
+          message: 'Minimum 100 calendars required (must be at least 100 Nos).'
+        });
+      }
     }
 
     if (registration_type === 'inside_kerala') {
-      // Validate mandatory Inside Kerala hierarchy
-      if (!district_id || !zone_id || !circle_id || !unit_id) {
+      // Units in selection order; the first one is the primary unit stored on the registration.
+      // `unit_id` (single) is still accepted from older clients.
+      const rawUnitIds = Array.isArray(unit_ids) ? unit_ids : (unit_id ? [unit_id] : []);
+      const selectedUnitIds = [...new Set(rawUnitIds.map((id) => parseInt(id, 10)))];
+
+      if (selectedUnitIds.length === 0 || selectedUnitIds.some((id) => !Number.isInteger(id) || id <= 0)) {
         await connection.rollback();
         connection.release();
         return res.status(400).json({
           success: false,
-          message: 'District, Zone, Circle, and Unit are all mandatory for Inside Kerala registration.'
+          message: 'Please select at least one Unit for Inside Kerala registration.'
         });
       }
 
-      // CRITICAL BUSINESS RULE: Unit availability & assignment with row-level locking
-      // Inside Kerala units are strictly limited to one student per unit.
+      const remainingSlots = maxUnits - heldUnitCount;
+      if (selectedUnitIds.length > remainingSlots) {
+        await connection.rollback();
+        connection.release();
+        return res.status(400).json({
+          success: false,
+          message: heldUnitCount > 0
+            ? `You already hold ${heldUnitCount} unit${heldUnitCount === 1 ? '' : 's'}; you can add only ${remainingSlots} more (maximum ${maxUnits}).`
+            : `You can select a maximum of ${maxUnits} unit${maxUnits === 1 ? '' : 's'}.`
+        });
+      }
+
+      // CRITICAL BUSINESS RULE: Unit availability & assignment with row-level locking.
+      // Each unit belongs to at most one student; a student may hold up to maxUnits units.
+      // Lock in id order so concurrent submissions can't deadlock each other.
       const [unitRows] = await connection.query(
-        `SELECT u.id, u.name,
+        `SELECT u.id, u.name, c.id AS circle_id, c.name AS circle_name,
+                z.id AS zone_id, z.name AS zone_name, d.id AS district_id, d.name AS district_name,
                 (SELECT COUNT(*) FROM unit_assignments ua WHERE ua.unit_id = u.id AND ua.status = 'active') AS active_assignment_count,
                 (SELECT COUNT(*) FROM registrations r WHERE r.unit_id = u.id AND r.registration_type = 'inside_kerala' AND r.status IN ('approved', 'pending')) AS active_reg_count
-         FROM units u 
-         WHERE u.id = ? AND u.circle_id = ? AND u.is_active = 1
-         FOR UPDATE`,
-        [unit_id, circle_id]
-      );
-
-      if (unitRows.length === 0) {
-        await connection.rollback();
-        connection.release();
-        return res.status(400).json({
-          success: false,
-          message: 'The selected unit is invalid or inactive.'
-        });
-      }
-
-      const unit = unitRows[0];
-      if (unit.active_assignment_count > 0 || unit.active_reg_count > 0) {
-        await connection.rollback();
-        connection.release();
-        // EXACT prompt requirement message:
-        return res.status(409).json({
-          success: false,
-          message: 'This unit has already been selected by another student. Please select another available unit.'
-        });
-      }
-
-      // Insert Registration with requested quantity and initial 0 additional granted
-      const [regResult] = await connection.query(
-        `INSERT INTO registrations 
-           (registration_code, student_id, registration_type, calendars_requested, additional_calendars, calendars_allotted, district_id, zone_id, circle_id, unit_id, status)
-         VALUES (?, ?, 'inside_kerala', ?, 0, ?, ?, ?, ?, ?, 'approved')`,
-        [regCode, student_id, requestedQuota, requestedQuota, district_id, zone_id, circle_id, unit_id]
-      );
-      registrationId = regResult.insertId;
-
-      // Insert Unit Assignment with active status
-      await connection.query(
-        `INSERT INTO unit_assignments (unit_id, student_id, registration_id, status, assigned_at)
-         VALUES (?, ?, ?, 'active', NOW())`,
-        [unit_id, student_id, registrationId]
-      );
-
-      // Fetch place hierarchy names for confirmation
-      const [placeRows] = await connection.query(
-        `SELECT d.name AS district_name, z.name AS zone_name, c.name AS circle_name, u.name AS unit_name
          FROM units u
          JOIN circles c ON u.circle_id = c.id
          JOIN zones z ON c.zone_id = z.id
          JOIN districts d ON z.district_id = d.id
-         WHERE u.id = ?`,
-        [unit_id]
+         WHERE u.id IN (?) AND u.is_active = 1
+         ORDER BY u.id
+         FOR UPDATE`,
+        [selectedUnitIds]
       );
-      if (placeRows.length > 0) {
+
+      if (unitRows.length !== selectedUnitIds.length) {
+        await connection.rollback();
+        connection.release();
+        return res.status(400).json({
+          success: false,
+          message: 'One or more selected units are invalid or inactive.'
+        });
+      }
+
+      const takenUnits = unitRows.filter((u) => u.active_assignment_count > 0 || u.active_reg_count > 0);
+      if (takenUnits.length > 0) {
+        await connection.rollback();
+        connection.release();
+        const names = takenUnits.map((u) => `"${u.name}"`).join(', ');
+        return res.status(409).json({
+          success: false,
+          message: `${names} ${takenUnits.length === 1 ? 'has' : 'have'} already been selected by another student. Please select another available unit.`
+        });
+      }
+
+      // Place hierarchy comes from the primary unit, not the client
+      const unitsById = new Map(unitRows.map((u) => [u.id, u]));
+      const orderedUnits = selectedUnitIds.map((id) => unitsById.get(id));
+      const primary = orderedUnits[0];
+
+      if (!existingReg) {
+        // Insert Registration with requested quantity and initial 0 additional granted
+        const [regResult] = await connection.query(
+          `INSERT INTO registrations
+             (registration_code, student_id, registration_type, calendars_requested, additional_calendars, calendars_allotted, district_id, zone_id, circle_id, unit_id, status)
+           VALUES (?, ?, 'inside_kerala', ?, 0, ?, ?, ?, ?, ?, 'approved')`,
+          [regCode, student_id, requestedQuota, requestedQuota, primary.district_id, primary.zone_id, primary.circle_id, primary.id]
+        );
+        registrationId = regResult.insertId;
+      }
+
+      // One active Unit Assignment per selected unit
+      await connection.query(
+        `INSERT INTO unit_assignments (unit_id, student_id, registration_id, status, assigned_at)
+         VALUES ${orderedUnits.map(() => `(?, ?, ?, 'active', NOW())`).join(', ')}`,
+        orderedUnits.flatMap((u) => [u.id, student_id, registrationId])
+      );
+
+      if (existingReg) {
+        // Confirmation shows the whole registration: its original place plus all units now held
+        const [[full]] = await connection.query(
+          `SELECT d.name AS district_name, z.name AS zone_name, c.name AS circle_name,
+                  ${REGISTRATION_UNIT_NAMES} AS unit_name
+           FROM registrations r
+           LEFT JOIN districts d ON r.district_id = d.id
+           LEFT JOIN zones z ON r.zone_id = z.id
+           LEFT JOIN circles c ON r.circle_id = c.id
+           LEFT JOIN units u ON r.unit_id = u.id
+           WHERE r.id = ?`,
+          [registrationId]
+        );
+        placeDetails = { ...full };
+      } else {
         placeDetails = {
-          district_name: placeRows[0].district_name,
-          zone_name: placeRows[0].zone_name,
-          circle_name: placeRows[0].circle_name,
-          unit_name: placeRows[0].unit_name
+          district_name: primary.district_name,
+          zone_name: primary.zone_name,
+          circle_name: primary.circle_name,
+          unit_name: orderedUnits.map((u) => u.name).join(', ')
         };
       }
+      placeDetails.addedUnits = orderedUnits.map((u) => ({
+        id: u.id,
+        name: u.name,
+        circle_name: u.circle_name,
+        zone_name: u.zone_name,
+        district_name: u.district_name
+      }));
+      // Every unit the registration now holds, each with its own location (for the slip)
+      placeDetails.units = await getRegistrationUnits(registrationId, connection);
 
     } else if (registration_type === 'outside_kerala') {
       // Validate Outside Kerala fields
@@ -233,9 +320,13 @@ async function submitRegistration(req, res, next) {
     await connection.commit();
     connection.release();
 
-    return res.status(201).json({
+    const addedCount = placeDetails.addedUnits ? placeDetails.addedUnits.length : 0;
+    return res.status(existingReg ? 200 : 201).json({
       success: true,
-      message: 'Registration submitted successfully!',
+      addedToExisting: Boolean(existingReg),
+      message: existingReg
+        ? `${addedCount} unit${addedCount === 1 ? '' : 's'} added to registration ${regCode}.`
+        : 'Registration submitted successfully!',
       registration: {
         id: registrationId,
         registrationCode: regCode,
@@ -243,8 +334,8 @@ async function submitRegistration(req, res, next) {
         regNo: student.reg_no,
         registrationType: registration_type,
         calendarsRequested: requestedQuota,
-        additionalCalendars: 0,
-        calendarsAllotted: requestedQuota,
+        additionalCalendars: existingReg ? existingReg.additional_calendars : 0,
+        calendarsAllotted: existingReg ? existingReg.calendars_allotted : requestedQuota,
         ...placeDetails
       }
     });
@@ -327,8 +418,9 @@ async function getRegistrations(req, res, next) {
     }
 
     if (unit_id) {
-      whereClauses.push('r.unit_id = ?');
-      params.push(unit_id);
+      // Match the primary unit or any additional unit held by the registration
+      whereClauses.push('(r.unit_id = ? OR EXISTS (SELECT 1 FROM unit_assignments ua_f WHERE ua_f.registration_id = r.id AND ua_f.unit_id = ?))');
+      params.push(unit_id, unit_id);
     }
 
     if (from_date) {
@@ -355,7 +447,7 @@ async function getRegistrations(req, res, next) {
     const [registrations] = await db.query(
       `SELECT r.*,
               s.candidate_name, s.reg_no, s.admission_no, s.class_name, s.hajer_no, s.hajer_no AS hall_no, s.place, s.mobile,
-              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, u.name AS unit_name
+              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, ${REGISTRATION_UNIT_NAMES} AS unit_name
        FROM registrations r
        JOIN students s ON r.student_id = s.id
        LEFT JOIN districts d ON r.district_id = d.id
@@ -367,6 +459,9 @@ async function getRegistrations(req, res, next) {
        LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
+
+    // Each registration's units with their own location (units may span circles/districts)
+    await attachRegistrationUnits(registrations);
 
     return res.json({
       success: true,
@@ -392,7 +487,7 @@ async function getRegistrationById(req, res, next) {
     const [rows] = await db.query(
       `SELECT r.*,
               s.candidate_name, s.reg_no, s.admission_no, s.class_name, s.hajer_no, s.hajer_no AS hall_no, s.place, s.mobile,
-              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, u.name AS unit_name,
+              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, ${REGISTRATION_UNIT_NAMES} AS unit_name,
               ua.id AS unit_assignment_id, ua.status AS assignment_status, ua.assigned_at, ua.released_at, ua.release_reason
        FROM registrations r
        JOIN students s ON r.student_id = s.id
@@ -410,6 +505,7 @@ async function getRegistrationById(req, res, next) {
       return res.status(404).json({ success: false, message: 'Registration record not found' });
     }
 
+    rows[0].units = await getRegistrationUnits(rows[0].id);
     return res.json({ success: true, registration: rows[0] });
   } catch (err) {
     next(err);

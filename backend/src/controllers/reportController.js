@@ -1,5 +1,6 @@
 const ExcelJS = require('exceljs');
 const db = require('../config/db');
+const { REGISTRATION_UNIT_NAMES } = require('../utils/sqlFragments');
 
 /**
  * Helper to generate and stream Excel file from columns and rows
@@ -92,7 +93,7 @@ async function getReport(req, res, next) {
           SELECT r.id, s.reg_no, s.candidate_name, s.class_name, r.registration_type,
                  IF(r.registration_type = 'inside_kerala', 'Inside Kerala', 'Outside Kerala') AS category_label,
                  IF(r.registration_type = 'inside_kerala', d.name, r.state_name) AS location_primary,
-                 IF(r.registration_type = 'inside_kerala', u.name, r.outside_unit) AS location_unit,
+                 IF(r.registration_type = 'inside_kerala', ${REGISTRATION_UNIT_NAMES}, r.outside_unit) AS location_unit,
                  r.calendars_requested,
                  r.additional_calendars,
                  r.calendars_allotted,

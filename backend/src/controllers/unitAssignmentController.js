@@ -197,14 +197,36 @@ async function releaseUnitAssignment(req, res, next) {
       [release_reason.trim(), req.user.id, id]
     );
 
-    // Also update associated registration to cancelled so both tables stay in perfect sync
+    // Keep the registration in sync. A registration can hold several units:
+    // only cancel it when its last active unit is released.
     if (assignment.registration_id) {
-      await connection.query(
-        `UPDATE registrations 
-         SET status = 'cancelled', rejection_reason = ? 
-         WHERE id = ?`,
-        [release_reason ? `Unit assignment released: ${release_reason.trim()}` : 'Unit assignment released', assignment.registration_id]
+      const [remaining] = await connection.query(
+        `SELECT unit_id FROM unit_assignments
+         WHERE registration_id = ? AND status = 'active'
+         ORDER BY id`,
+        [assignment.registration_id]
       );
+
+      if (remaining.length === 0) {
+        await connection.query(
+          `UPDATE registrations
+           SET status = 'cancelled', rejection_reason = ?
+           WHERE id = ?`,
+          [release_reason ? `Unit assignment released: ${release_reason.trim()}` : 'Unit assignment released', assignment.registration_id]
+        );
+      } else {
+        // Registration stays active; if its primary unit was released, promote the next remaining unit
+        // (with its place hierarchy, since units may come from different circles)
+        await connection.query(
+          `UPDATE registrations r
+           JOIN units u ON u.id = ?
+           JOIN circles c ON u.circle_id = c.id
+           JOIN zones z ON c.zone_id = z.id
+           SET r.unit_id = u.id, r.circle_id = c.id, r.zone_id = z.id, r.district_id = z.district_id
+           WHERE r.id = ? AND r.unit_id = ?`,
+          [remaining[0].unit_id, assignment.registration_id, assignment.unit_id]
+        );
+      }
     }
 
     await connection.commit();

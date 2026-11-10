@@ -21,6 +21,7 @@ import LocationManagementPage from './pages/admin/LocationManagementPage';
 import PlaceManagementPage from './pages/admin/PlaceManagementPage';
 import UnitAssignmentPage from './pages/admin/UnitAssignmentPage';
 import ReportsPage from './pages/admin/ReportsPage';
+import SettingsPage from './pages/admin/SettingsPage';
 
 // Protected Route Component
 function ProtectedRoute({ children }) {
@@ -74,6 +75,7 @@ export default function App() {
             <Route path="places" element={<PlaceManagementPage />} />
             <Route path="unit-assignments" element={<Navigate to="/admin/places?view=places" replace />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
 
           {/* Fallback */}

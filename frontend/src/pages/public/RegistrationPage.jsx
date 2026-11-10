@@ -15,9 +15,11 @@ import {
   Check,
   RotateCcw,
   Printer,
+  Plus,
   X
 } from 'lucide-react';
 import api from '../../services/api';
+import RegistrationClosed, { usePublicSettings } from '../../components/RegistrationClosed';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
@@ -32,12 +34,17 @@ export default function RegistrationPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  // Admin-managed settings: open/closed state and max units per student
+  const { settings, setSettings, loading: loadingSettings } = usePublicSettings();
+  const maxUnits = settings.maxUnitsPerStudent;
+
   // Search State
   const [searchNumber, setSearchNumber] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [student, setStudent] = useState(null);
-  const [existingRegistration, setExistingRegistration] = useState(null);
+  // Active registrations of the looked-up student (Inside Kerala and/or Outside Kerala)
+  const [studentRegistrations, setStudentRegistrations] = useState([]);
 
   // Real-time Live Search State (triggers when 3 or more characters are entered)
   const [liveSuggestions, setLiveSuggestions] = useState([]);
@@ -61,7 +68,10 @@ export default function RegistrationPage() {
   const [selectedDistrictId, setSelectedDistrictId] = useState(null);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [selectedCircleId, setSelectedCircleId] = useState(null);
-  const [selectedUnitId, setSelectedUnitId] = useState(null);
+  // Selected units ({ id, name, circleName }), kept across circle changes so a student
+  // can pick units from more than one circle, up to maxUnits
+  const [selectedUnits, setSelectedUnits] = useState([]);
+  const [unitLimitNotice, setUnitLimitNotice] = useState('');
 
   // In-box filter search terms
   const [districtFilter, setDistrictFilter] = useState('');
@@ -93,6 +103,42 @@ export default function RegistrationPage() {
   const [calendarQuantity, setCalendarQuantity] = useState(100);
   const [quantityError, setQuantityError] = useState('');
 
+  // A student can hold one Inside Kerala registration (several units) and one Outside Kerala
+  // registration. They share the admin's unit limit: Kerala units + Outside Kerala (counts as 1).
+  const insideReg = studentRegistrations.find((r) => r.registration_type === 'inside_kerala') || null;
+  const outsideReg = studentRegistrations.find((r) => r.registration_type === 'outside_kerala') || null;
+  const isRegistered = studentRegistrations.length > 0;
+  const heldUnits = (insideReg ? Number(insideReg.unit_count) || 0 : 0) + (outsideReg ? 1 : 0);
+  const slotsLeft = Math.max(0, maxUnits - heldUnits);
+  const canRegisterInside = slotsLeft > 0;
+  const canRegisterOutside = !outsideReg && slotsLeft > 0;
+  const canSubmitSelected = registrationType === 'inside_kerala' ? canRegisterInside : canRegisterOutside;
+  // A Kerala submission from a student who already has a Kerala registration adds units to it
+  const canAddUnits = registrationType === 'inside_kerala' && Boolean(insideReg) && canRegisterInside;
+  // How many Kerala units can be picked in this submission
+  const unitLimit = slotsLeft;
+  // Calendars already allotted to the student, across all their registrations
+  const allottedOf = (reg) => Number(reg?.calendars_allotted ?? reg?.calendars_requested) || 0;
+  const registeredCalendarTotal = studentRegistrations.reduce((sum, r) => sum + allottedOf(r), 0);
+
+  // Keep the selected category on one the student is still allowed to submit
+  useEffect(() => {
+    if (!isRegistered) return;
+    if (registrationType === 'inside_kerala' && !canRegisterInside && canRegisterOutside) {
+      setRegistrationType('outside_kerala');
+    } else if (registrationType === 'outside_kerala' && !canRegisterOutside && canRegisterInside) {
+      setRegistrationType('inside_kerala');
+    }
+  }, [isRegistered, registrationType, canRegisterInside, canRegisterOutside]);
+
+  // Jump to step 3 with a category selected (used by the "already registered" panel)
+  const startRegistration = (type) => {
+    setRegistrationType(type);
+    setTimeout(() => {
+      document.getElementById('registration-step-3')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
+
   // Load districts on mount
   useEffect(() => {
     async function loadDistricts() {
@@ -119,7 +165,6 @@ export default function RegistrationPage() {
       setCircles([]);
       setSelectedCircleId(null);
       setUnits([]);
-      setSelectedUnitId(null);
       return;
     }
 
@@ -130,7 +175,6 @@ export default function RegistrationPage() {
         setCircles([]);
         setSelectedCircleId(null);
         setUnits([]);
-        setSelectedUnitId(null);
 
         const res = await api.get(`/locations/zones?districtId=${selectedDistrictId}`);
         if (res.data.success) {
@@ -151,7 +195,6 @@ export default function RegistrationPage() {
       setCircles([]);
       setSelectedCircleId(null);
       setUnits([]);
-      setSelectedUnitId(null);
       return;
     }
 
@@ -160,7 +203,6 @@ export default function RegistrationPage() {
         setLoadingCircles(true);
         setSelectedCircleId(null);
         setUnits([]);
-        setSelectedUnitId(null);
 
         const res = await api.get(`/locations/circles?zoneId=${selectedZoneId}`);
         if (res.data.success) {
@@ -179,14 +221,12 @@ export default function RegistrationPage() {
   useEffect(() => {
     if (!selectedCircleId) {
       setUnits([]);
-      setSelectedUnitId(null);
       return;
     }
 
     async function loadUnits() {
       try {
         setLoadingUnits(true);
-        setSelectedUnitId(null);
 
         const res = await api.get(`/locations/units/available?circleId=${selectedCircleId}`);
         if (res.data.success) {
@@ -213,15 +253,23 @@ export default function RegistrationPage() {
     setSearching(true);
     setSearchError('');
     setStudent(null);
-    setExistingRegistration(null);
+    setStudentRegistrations([]);
     setSubmitError('');
+    // The unit limit depends on the student, so start their selection fresh
+    setSelectedUnits([]);
+    setUnitLimitNotice('');
 
     try {
       const res = await api.get(`/students/lookup?number=${encodeURIComponent(query)}`);
       if (res.data.success) {
         setStudent(res.data.student);
         if (res.data.isAlreadyRegistered) {
-          setExistingRegistration(res.data.existingRegistration);
+          // Older API responses only have the single existingRegistration
+          setStudentRegistrations(
+            Array.isArray(res.data.registrations)
+              ? res.data.registrations
+              : [res.data.existingRegistration].filter(Boolean)
+          );
         }
       }
     } catch (err) {
@@ -334,8 +382,12 @@ export default function RegistrationPage() {
       return;
     }
 
-    if (existingRegistration) {
-      setSubmitError('You have already submitted a registration. Duplicate submissions are not allowed.');
+    if (isRegistered && !canSubmitSelected) {
+      setSubmitError(
+        registrationType === 'outside_kerala' && outsideReg
+          ? 'You already have an Outside Kerala registration. Only one is allowed.'
+          : `You have already used all ${maxUnits} unit slot${maxUnits === 1 ? '' : 's'}. No further registrations are allowed.`
+      );
       return;
     }
 
@@ -344,8 +396,11 @@ export default function RegistrationPage() {
       return;
     }
 
-    const parsedQuantity = parseInt(calendarQuantity, 10);
-    if (!parsedQuantity || isNaN(parsedQuantity) || parsedQuantity < 100 || !Number.isInteger(Number(calendarQuantity))) {
+    // Adding units keeps the registered calendar quantity; only new registrations choose one
+    const parsedQuantity = canAddUnits
+      ? Number(insideReg.calendars_requested) || 100
+      : parseInt(calendarQuantity, 10);
+    if (!canAddUnits && (!parsedQuantity || isNaN(parsedQuantity) || parsedQuantity < 100 || !Number.isInteger(Number(calendarQuantity)))) {
       setSubmitError('Minimum 100 calendars required (e.g., 100 Nos or more).');
       return;
     }
@@ -358,14 +413,18 @@ export default function RegistrationPage() {
     };
 
     if (registrationType === 'inside_kerala') {
-      if (!selectedDistrictId || !selectedZoneId || !selectedCircleId || !selectedUnitId) {
-        setSubmitError('Please select District, Zone, Circle, and Unit.');
+      if (selectedUnits.length === 0) {
+        setSubmitError('Please select District, Zone, Circle, and at least one Unit.');
         return;
       }
-      payload.district_id = selectedDistrictId;
-      payload.zone_id = selectedZoneId;
-      payload.circle_id = selectedCircleId;
-      payload.unit_id = selectedUnitId;
+      if (selectedUnits.length > unitLimit) {
+        setSubmitError(canAddUnits
+          ? `You can add only ${unitLimit} more unit${unitLimit === 1 ? '' : 's'}.`
+          : `You can select a maximum of ${unitLimit} unit${unitLimit === 1 ? '' : 's'}.`);
+        return;
+      }
+      // District / Zone / Circle are derived from the units on the server
+      payload.unit_ids = selectedUnits.map((u) => u.id);
     } else {
       if (
         !outsideForm.state_name ||
@@ -388,20 +447,12 @@ export default function RegistrationPage() {
     try {
       const res = await api.post('/registrations', payload);
       if (res.data.success) {
-        const districtObj = districts.find(d => d.id === selectedDistrictId);
-        const zoneObj = zones.find(z => z.id === selectedZoneId);
-        const circleObj = circles.find(c => c.id === selectedCircleId);
-        const unitObj = units.find(u => u.id === selectedUnitId);
-
         const regWithPlaces = {
           ...res.data.registration,
           calendars_requested: res.data.registration.calendarsRequested || parsedQuantity,
           additional_calendars: res.data.registration.additionalCalendars || 0,
           calendars_allotted: res.data.registration.calendarsAllotted || parsedQuantity,
-          district_name: res.data.registration.district_name || districtObj?.name,
-          zone_name: res.data.registration.zone_name || zoneObj?.name,
-          circle_name: res.data.registration.circle_name || circleObj?.name,
-          unit_name: res.data.registration.unit_name || unitObj?.name,
+          unit_name: res.data.registration.unit_name || selectedUnits.map((u) => u.name).join(', '),
           state_name: res.data.registration.state_name || outsideForm.state_name,
           outside_district: res.data.registration.outside_district || outsideForm.outside_district,
           outside_zone: res.data.registration.outside_zone || outsideForm.outside_zone,
@@ -417,7 +468,10 @@ export default function RegistrationPage() {
         });
       }
     } catch (err) {
-      if (err.response && err.response.data && err.response.data.message) {
+      if (err.response?.data?.registrationClosed) {
+        // Admin closed registration while the form was open: switch to the closed page
+        setSettings((prev) => ({ ...prev, registrationOpen: false, closedMessage: err.response.data.message }));
+      } else if (err.response && err.response.data && err.response.data.message) {
         setSubmitError(err.response.data.message);
       } else {
         setSubmitError('Failed to submit registration. Please check your network and try again.');
@@ -426,6 +480,43 @@ export default function RegistrationPage() {
       setSubmitting(false);
     }
   };
+
+  // Toggle a unit; enforces the admin-configured maximum.
+  // With a limit of 1, picking another unit replaces the current one (original behaviour).
+  const toggleUnit = (unit) => {
+    setUnitLimitNotice('');
+    if (selectedUnits.some((u) => u.id === unit.id)) {
+      setSelectedUnits(selectedUnits.filter((u) => u.id !== unit.id));
+      return;
+    }
+    const entry = {
+      id: unit.id,
+      name: unit.name,
+      districtName: districts.find((d) => d.id === selectedDistrictId)?.name || '',
+      zoneName: zones.find((z) => z.id === selectedZoneId)?.name || '',
+      circleName: circles.find((c) => c.id === selectedCircleId)?.name || ''
+    };
+    if (unitLimit === 1) {
+      setSelectedUnits([entry]);
+    } else if (selectedUnits.length >= unitLimit) {
+      setUnitLimitNotice(`You can select a maximum of ${unitLimit} units. Remove one to choose another.`);
+    } else {
+      setSelectedUnits([...selectedUnits, entry]);
+    }
+  };
+
+  if (loadingSettings) {
+    return (
+      <div className="flex items-center justify-center gap-2 p-12 text-sm bg-white border shadow-sm rounded-2xl border-slate-200 text-slate-500">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span>Loading registration form...</span>
+      </div>
+    );
+  }
+
+  if (!settings.registrationOpen) {
+    return <RegistrationClosed title={settings.closedTitle} message={settings.closedMessage} />;
+  }
 
   return (
     <div className="mb-8 overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
@@ -497,7 +588,7 @@ export default function RegistrationPage() {
                         setLiveSuggestions([]);
                         setShowDropdown(false);
                         setStudent(null);
-                        setExistingRegistration(null);
+                        setStudentRegistrations([]);
                         setSearchError('');
                         searchInputRef.current?.focus();
                       }}
@@ -620,18 +711,58 @@ export default function RegistrationPage() {
                         </div>
 
                         {/* Status Tag */}
-                        <div className="text-right shrink-0">
-                          {item.isAlreadyRegistered ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              <AlertCircle className="w-3 h-3 text-amber-600" />
-                              <span>Already Registered</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span>Ready</span>
-                            </span>
-                          )}
+                        {/* Status + unit slot hint (older API responses fall back to the plain badge) */}
+                        <div className="flex flex-col items-end gap-0.5 text-right shrink-0">
+                          {(() => {
+                            const slotsLeft = item.unitSlotsLeft;
+                            const hasSlotInfo = typeof slotsLeft === 'number';
+                            const slotText = (n) => `${n} unit slot${n === 1 ? '' : 's'} left`;
+
+                            if (!item.isAlreadyRegistered) {
+                              return (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span>Ready</span>
+                                  </span>
+                                  {hasSlotInfo && item.maxUnits > 1 && (
+                                    <span className="text-[10px] font-semibold text-emerald-700">
+                                      Up to {item.maxUnits} units
+                                    </span>
+                                  )}
+                                </>
+                              );
+                            }
+
+                            if (hasSlotInfo && slotsLeft > 0) {
+                              // Registered, can still add units
+                              return (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
+                                    <Plus className="w-3 h-3 text-sky-600" />
+                                    <span>{slotText(slotsLeft)}</span>
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-slate-500">
+                                    Registered · {item.unitsHeld} of {item.maxUnits} units
+                                  </span>
+                                </>
+                              );
+                            }
+
+                            return (
+                              <>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                  <AlertCircle className="w-3 h-3 text-amber-600" />
+                                  <span>Already Registered</span>
+                                </span>
+                                {hasSlotInfo && (
+                                  <span className="text-[10px] font-semibold text-amber-700">
+                                    {`No slots left · ${item.unitsHeld} of ${item.maxUnits} units used`}
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     );
@@ -739,13 +870,18 @@ export default function RegistrationPage() {
                   <span className="text-slate-500 block text-[11px] uppercase tracking-wider font-semibold">
                     CALENDARS ALLOTTED
                   </span>
-                  {existingRegistration ? (
-                    // Registered: show the stored allotment (requested + any admin-granted extra)
+                  {isRegistered ? (
+                    // Registered: total stored allotment across the student's registrations
+                    // (each includes any admin-granted extra)
                     <span className="font-bold text-markaz-700 text-sm mt-0.5 block">
-                      {existingRegistration.calendars_allotted ?? existingRegistration.calendars_requested ?? 100}
-                      {existingRegistration.additional_calendars > 0 && (
+                      {registeredCalendarTotal}
+                      {studentRegistrations.length > 1 ? (
+                        <span className="block text-[11px] font-medium text-slate-500">
+                          Kerala {allottedOf(insideReg)} + Outside {allottedOf(outsideReg)}
+                        </span>
+                      ) : studentRegistrations[0].additional_calendars > 0 && (
                         <span className="ml-1 text-[11px] font-semibold text-emerald-700">
-                          (+{existingRegistration.additional_calendars} addl.)
+                          (+{studentRegistrations[0].additional_calendars} addl.)
                         </span>
                       )}
                     </span>
@@ -759,44 +895,162 @@ export default function RegistrationPage() {
                 </div>
               </div>
 
-              {/* Already Registered Alert */}
-              {existingRegistration && (
-                <div className="p-4 space-y-2 text-xs border rounded-xl bg-amber-50 border-amber-300 text-amber-900 md:text-sm">
-                  <div className="flex items-center gap-2 font-bold text-amber-800">
-                    <AlertCircle className="w-4 h-4 text-amber-600" />
-                    <span>This Student is Already Registered</span>
-                  </div>
-                  <p className="text-xs leading-relaxed text-amber-800">
-                    This student record has already been registered on{' '}
-                    <strong>{new Date(existingRegistration.submitted_at).toLocaleDateString()}</strong>.
-                    {existingRegistration.registration_type === 'inside_kerala' ? (
-                      <> Allotted Location: {existingRegistration.district_name} → {existingRegistration.zone_name} → {existingRegistration.circle_name} → <strong>{existingRegistration.unit_name}</strong>.</>
+              {/* Existing Registrations Panel
+                  Lists the student's registrations (Kerala and/or Outside Kerala) and what they can still do:
+                  units used + slots left are shared (Kerala units + Outside Kerala counts as 1). */}
+              {isRegistered && (() => {
+                const hasSlots = slotsLeft > 0;
+                const tone = hasSlots
+                  ? {
+                      box: 'bg-emerald-50 border-emerald-300',
+                      title: 'text-emerald-900',
+                      muted: 'text-emerald-800',
+                      icon: 'text-emerald-600',
+                      card: 'bg-white border-emerald-200',
+                      chip: 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    }
+                  : {
+                      box: 'bg-amber-50 border-amber-300',
+                      title: 'text-amber-900',
+                      muted: 'text-amber-800',
+                      icon: 'text-amber-600',
+                      card: 'bg-white border-amber-200',
+                      chip: 'bg-amber-50 border-amber-200 text-amber-950'
+                    };
+
+                const unitsOf = (reg) =>
+                  Array.isArray(reg.units) && reg.units.length > 0
+                    ? reg.units
+                    : (reg.unit_name || '')
+                        .split(',')
+                        .map((name) => name.trim())
+                        .filter(Boolean)
+                        .map((name) => ({ unit_name: name }));
+
+                return (
+                  <div className={`p-4 md:p-5 space-y-3 border rounded-xl ${tone.box}`}>
+                    {/* Heading + slot usage */}
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div className={`flex items-center gap-2 text-sm font-bold ${tone.title}`}>
+                        {hasSlots
+                          ? <CheckCircle2 className={`w-4 h-4 ${tone.icon}`} />
+                          : <AlertCircle className={`w-4 h-4 ${tone.icon}`} />}
+                        <span>
+                          {hasSlots
+                            ? `Already Registered: ${slotsLeft} Unit Slot${slotsLeft === 1 ? '' : 's'} Left`
+                            : 'Already Registered: All Unit Slots Used'}
+                        </span>
+                      </div>
+                      <span className={`text-[11px] font-semibold ${tone.muted}`}>
+                        {heldUnits} of {maxUnits} unit slot{maxUnits === 1 ? '' : 's'} used
+                      </span>
+                    </div>
+
+                    {/* One card per registration */}
+                    <div className="grid gap-2">
+                      {studentRegistrations.map((reg) => {
+                        const isInside = reg.registration_type === 'inside_kerala';
+                        const regUnits = isInside ? unitsOf(reg) : [];
+                        return (
+                          <div key={reg.id} className={`p-3 space-y-2 border rounded-lg ${tone.card}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className={`px-2 py-0.5 rounded-md font-bold ${isInside ? 'bg-blue-100 text-markaz-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                  {isInside ? 'Inside Kerala' : 'Outside Kerala'}
+                                </span>
+                                <span className="font-bold text-slate-800">{reg.registration_code}</span>
+                                <span className="text-slate-500">
+                                  · {new Date(reg.submitted_at).toLocaleDateString()}
+                                  · {reg.calendars_allotted ?? reg.calendars_requested ?? 100} calendars
+                                  {isInside && ` · ${regUnits.length} unit${regUnits.length === 1 ? '' : 's'}`}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => navigate('/confirmation', { state: { registration: reg, student } })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition"
+                              >
+                                <Printer className="w-3 h-3" />
+                                <span>View & Print Slip</span>
+                              </button>
+                            </div>
+
+                            {isInside ? (
+                              <div className="flex flex-wrap gap-2">
+                                {regUnits.map((u) => (
+                                  <span key={u.id || u.unit_name} className={`inline-flex items-start gap-1.5 px-2.5 py-1.5 rounded-md border text-xs ${tone.chip}`}>
+                                    <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                    <span>
+                                      <span className="block font-bold">{u.unit_name}</span>
+                                      {u.circle_name && (
+                                        <span className="block text-[11px] font-medium text-slate-500">
+                                          {u.district_name} → {u.zone_name} → {u.circle_name}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-700">
+                                <Globe className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-emerald-600" />
+                                <strong>{reg.state_name}</strong>: {reg.outside_district} → {reg.outside_zone} → {reg.outside_circle} → <strong>{reg.outside_unit}</strong>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* What the student can still do */}
+                    {hasSlots ? (
+                      <div className="p-3 space-y-2 bg-white border rounded-lg border-emerald-200">
+                        <p className="text-xs font-semibold text-slate-800">You can still:</p>
+                        <ul className="space-y-1 text-xs list-disc list-inside text-slate-700">
+                          <li>
+                            {insideReg
+                              ? <>Add up to <strong>{slotsLeft} more Kerala unit{slotsLeft === 1 ? '' : 's'}</strong> to {insideReg.registration_code} (calendar quantity stays the same)</>
+                              : <>Register <strong>Inside Kerala</strong> with up to {slotsLeft} unit{slotsLeft === 1 ? '' : 's'}</>}
+                          </li>
+                          {canRegisterOutside && (
+                            <li>
+                              Register <strong>Outside Kerala</strong> (uses 1 slot, with its own calendar quantity)
+                            </li>
+                          )}
+                        </ul>
+                        <p className="text-xs font-medium text-slate-600">
+                          നിങ്ങൾ ഇതിനകം രജിസ്റ്റർ ചെയ്തിട്ടുണ്ട്. ഇനി {slotsLeft} യൂണിറ്റ് കൂടി രജിസ്റ്റർ ചെയ്യാം.
+                        </p>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => startRegistration('inside_kerala')}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-markaz-700 hover:bg-markaz-800 text-white rounded-lg text-xs font-semibold shadow-sm transition active:scale-95"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{insideReg ? 'Add Kerala Units' : 'Register Inside Kerala'}</span>
+                          </button>
+                          {canRegisterOutside && (
+                            <button
+                              type="button"
+                              onClick={() => startRegistration('outside_kerala')}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition active:scale-95"
+                            >
+                              <Globe className="w-3.5 h-3.5" />
+                              <span>Register Outside Kerala</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     ) : (
-                      <> Outside Kerala Location: {existingRegistration.state_name}, {existingRegistration.outside_district}, {existingRegistration.outside_unit}.</>
+                      <p className={`text-[11px] font-medium ${tone.muted}`}>
+                        You have used all {maxUnits} unit slot{maxUnits === 1 ? '' : 's'} allowed per student, so no further registrations can be made.
+                        If you need changes, please contact the Markaz Administration.
+                      </p>
                     )}
-                  </p>
-                  <p className="text-[11px] text-amber-700 font-medium">
-                    Duplicate submissions are blocked by institutional policy. If you need modifications, please reach out to the Markaz Administration.
-                  </p>
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate('/confirmation', {
-                          state: {
-                            registration: existingRegistration,
-                            student
-                          }
-                        })
-                      }
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-semibold shadow-sm transition active:scale-95"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>View & Print Confirmation Slip</span>
-                    </button>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>
@@ -816,7 +1070,8 @@ export default function RegistrationPage() {
             <button
               type="button"
               onClick={() => setRegistrationType('inside_kerala')}
-              className={`p-4 rounded-xl border text-left transition flex items-start gap-3 ${
+              disabled={isRegistered && !canRegisterInside}
+              className={`p-4 rounded-xl border text-left transition flex items-start gap-3 disabled:opacity-50 disabled:cursor-not-allowed ${
                 registrationType === 'inside_kerala'
                   ? 'border-markaz-700 bg-blue-50/70 ring-2 ring-markaz-600 ring-offset-1'
                   : 'border-slate-200 bg-white hover:border-slate-300'
@@ -835,16 +1090,23 @@ export default function RegistrationPage() {
                 <h4 className="text-sm font-bold text-slate-900">
                   Inside Kerala Registration
                 </h4>
-                {/* <p className="mt-1 text-xs text-slate-600">
-                 District, Zone, Circle, and Unit.
-                </p> */}
+                {isRegistered && (
+                  <p className="mt-1 text-xs text-slate-600">
+                    {!canRegisterInside
+                      ? 'No unit slots left'
+                      : insideReg
+                      ? `Add up to ${slotsLeft} more unit${slotsLeft === 1 ? '' : 's'} to ${insideReg.registration_code}`
+                      : `New registration, up to ${slotsLeft} unit${slotsLeft === 1 ? '' : 's'}`}
+                  </p>
+                )}
               </div>
             </button>
 
             <button
               type="button"
               onClick={() => setRegistrationType('outside_kerala')}
-              className={`p-4 rounded-xl border text-left transition flex items-start gap-3 ${
+              disabled={isRegistered && !canRegisterOutside}
+              className={`p-4 rounded-xl border text-left transition flex items-start gap-3 disabled:opacity-50 disabled:cursor-not-allowed ${
                 registrationType === 'outside_kerala'
                   ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500 ring-offset-1'
                   : 'border-slate-200 bg-white hover:border-slate-300'
@@ -863,9 +1125,15 @@ export default function RegistrationPage() {
                 <h4 className="text-sm font-bold text-slate-900">
                   Outside Kerala Registration
                 </h4>
-                {/* <p className="mt-1 text-xs text-slate-600">
-                  Manual text input entry for non-Kerala  locations.
-                </p> */}
+                {isRegistered && (
+                  <p className="mt-1 text-xs text-slate-600">
+                    {outsideReg
+                      ? `Already registered (${outsideReg.registration_code})`
+                      : !canRegisterOutside
+                      ? 'No unit slots left'
+                      : 'Uses 1 unit slot, with its own calendar quantity'}
+                  </p>
+                )}
               </div>
             </button>
           </div>
@@ -873,7 +1141,7 @@ export default function RegistrationPage() {
 
         {/* STEP 3: REGISTRATION FORM */}
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+          <div id="registration-step-3" className="flex items-center gap-2 pb-2 border-b border-slate-200 scroll-mt-4">
             <span className="flex items-center justify-center w-6 h-6 text-xs font-bold text-white rounded-full bg-markaz-700">
               3
             </span>
@@ -1021,26 +1289,78 @@ export default function RegistrationPage() {
 
               {/* Row 2: SELECT UNIT (Dedicated row with background #FBF7D5) */}
               <div
+                id="unit-selection"
                 className="p-5 space-y-3 border shadow-sm rounded-xl border-amber-300"
                 style={{ backgroundColor: '#FBF7D5' }}
               >
                 <div className="flex flex-col justify-between gap-1 pb-2 border-b sm:flex-row sm:items-center border-amber-200">
                   <div className="space-y-0.5">
                     <label className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                      <span>Select Unit</span>
+                      <span>
+                        {canAddUnits
+                          ? (unitLimit > 1 ? 'Select Additional Units' : 'Select Additional Unit')
+                          : (unitLimit > 1 ? 'Select Units' : 'Select Unit')}
+                      </span>
                       <span className="text-red-600">*</span>
                     </label>
-                    {/* Exact Malayalam instruction from original Markaz portal */}
+                    {/* Malayalam instruction; reflects the unit slots left (original portal wording when the limit is 1) */}
                     <p className="text-xs font-medium text-amber-900">
-                      ഒരു യൂണിറ്റ് ഒരു വിദ്യാർത്ഥിക്ക് മാത്രമേ സെലക്ട് ചെയ്യാൻ സാധിക്കുകയുള്ളൂ. സെലക്ട് ചെയ്ത യൂണിറ്റ് ഇവിടെ കാണിക്കുകയില്ല*
+                      {heldUnits > 0
+                        ? `നിങ്ങൾ ഇതിനകം ${heldUnits} യൂണിറ്റ് സെലക്ട് ചെയ്തിട്ടുണ്ട്. ഇനി ${unitLimit} യൂണിറ്റ് കൂടി സെലക്ട് ചെയ്യാം (പരമാവധി ${maxUnits}). ഒരു യൂണിറ്റ് ഒരു വിദ്യാർത്ഥിക്ക് മാത്രമേ ലഭിക്കുകയുള്ളൂ. മറ്റുള്ളവർ സെലക്ട് ചെയ്ത യൂണിറ്റുകൾ ഇവിടെ കാണിക്കുകയില്ല*`
+                        : maxUnits > 1
+                        ? `ഒരു വിദ്യാർത്ഥിക്ക് പരമാവധി ${maxUnits} യൂണിറ്റുകൾ വരെ സെലക്ട് ചെയ്യാം. ഒരു യൂണിറ്റ് ഒരു വിദ്യാർത്ഥിക്ക് മാത്രമേ ലഭിക്കുകയുള്ളൂ. മറ്റുള്ളവർ സെലക്ട് ചെയ്ത യൂണിറ്റുകൾ ഇവിടെ കാണിക്കുകയില്ല*`
+                        : 'ഒരു യൂണിറ്റ് ഒരു വിദ്യാർത്ഥിക്ക് മാത്രമേ സെലക്ട് ചെയ്യാൻ സാധിക്കുകയുള്ളൂ. സെലക്ട് ചെയ്ത യൂണിറ്റ് ഇവിടെ കാണിക്കുകയില്ല*'}
                     </p>
+                    {heldUnits > 0 ? (
+                      <p className="text-xs font-bold text-slate-800">
+                        You have used {heldUnits} of {maxUnits} unit slots. You can select up to {unitLimit} more Kerala unit{unitLimit === 1 ? '' : 's'}, from one or more circles.
+                      </p>
+                    ) : maxUnits > 1 && (
+                      <p className="text-xs font-bold text-slate-800">
+                        You can select up to {maxUnits} units, from one or more circles.
+                      </p>
+                    )}
                   </div>
-                  {selectedUnitId && (
-                    <span className="self-start px-3 py-1 text-xs font-bold rounded-full text-amber-900 bg-amber-200 sm:self-auto">
-                      1 Unit Selected
+                  {selectedUnits.length > 0 && (
+                    <span className="self-start px-3 py-1 text-xs font-bold rounded-full text-amber-900 bg-amber-200 sm:self-auto whitespace-nowrap">
+                      {unitLimit > 1
+                        ? `${selectedUnits.length} of ${unitLimit} Units Selected`
+                        : '1 Unit Selected'}
                     </span>
                   )}
                 </div>
+
+                {/* Selected units (may span several circles); removable chips */}
+                {unitLimit > 1 && selectedUnits.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedUnits.map((u) => (
+                      <span
+                        key={u.id}
+                        className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg bg-amber-600 text-white text-xs font-bold shadow-sm"
+                      >
+                        <span>{u.name}</span>
+                        {u.circleName && (
+                          <span className="font-medium text-amber-100">({u.circleName})</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleUnit(u)}
+                          title={`Remove ${u.name}`}
+                          className="p-0.5 rounded hover:bg-amber-700 transition"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {unitLimitNotice && (
+                  <div className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-700 border border-red-200 rounded-lg bg-red-50">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{unitLimitNotice}</span>
+                  </div>
+                )}
 
                 {/* Dropdown or quick search for units */}
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1078,23 +1398,24 @@ export default function RegistrationPage() {
                       {units
                         .filter((u) => u.name.toLowerCase().includes(unitFilter.toLowerCase()))
                         .map((u) => {
-                          const isChecked = selectedUnitId === u.id;
+                          const isChecked = selectedUnits.some((s) => s.id === u.id);
+                          // At the limit (when more than one is allowed), other units are dimmed
+                          const atLimit = unitLimit > 1 && !isChecked && selectedUnits.length >= unitLimit;
                           return (
                             <label
                               key={u.id}
                               className={`flex items-center gap-2.5 p-2 rounded-lg cursor-pointer transition text-xs font-bold border ${
                                 isChecked
                                   ? 'bg-amber-600 border-amber-700 text-white shadow-sm'
+                                  : atLimit
+                                  ? 'bg-white/60 border-amber-100 text-slate-400'
                                   : 'bg-white border-amber-200 hover:bg-amber-100/50 text-slate-900'
                               }`}
                             >
                               <input
                                 type="checkbox"
                                 checked={isChecked}
-                                onChange={() => {
-                                  // Enforce strict single-selection logic: clicking another replaces current
-                                  setSelectedUnitId(isChecked ? null : u.id);
-                                }}
+                                onChange={() => toggleUnit(u)}
                                 className="w-4 h-4 rounded cursor-pointer text-amber-600 focus:ring-0"
                               />
                               <span className="truncate">{u.name}</span>
@@ -1202,6 +1523,23 @@ export default function RegistrationPage() {
           )}
 
           {/* Calendars Wanted Notice (Student Selectable Quota) */}
+          {canAddUnits ? (
+            // Adding units: quantity was fixed at registration (admins can change it)
+            <div className="flex flex-col justify-between gap-1 p-4 border bg-slate-50 rounded-xl border-slate-200 sm:flex-row sm:items-center">
+              <div className="space-y-0.5">
+                <span className="block text-xs font-bold text-markaz-700">Calendars Allotted (Total)</span>
+                <p className="text-xs font-medium text-slate-600">
+                  {outsideReg
+                    ? `Kerala ${allottedOf(insideReg)} + Outside ${allottedOf(outsideReg)}. `
+                    : ''}
+                  Unchanged when adding units. Contact the Markaz administration to change it.
+                </p>
+              </div>
+              <span className="text-base font-bold text-slate-900">
+                {registeredCalendarTotal} Nos
+              </span>
+            </div>
+          ) : (
           <div className="flex flex-col justify-between gap-3 p-4 border bg-slate-50 rounded-xl border-slate-200 sm:flex-row sm:items-center">
             <div className="space-y-0.5">
               <label htmlFor="calendarQuantityInput" className="block text-xs font-bold cursor-pointer text-markaz-700">
@@ -1293,31 +1631,42 @@ export default function RegistrationPage() {
               {quantityError && (
                 <span className="text-[11px] font-semibold text-red-600">{quantityError}</span>
               )}
+              {/* Registered student starting a second registration: show the combined total */}
+              {isRegistered && !quantityError && (
+                <span className="text-[11px] font-semibold text-slate-600">
+                  Total with existing {registeredCalendarTotal}: {registeredCalendarTotal + (parseInt(calendarQuantity, 10) || 0)} Nos
+                </span>
+              )}
             </div>
           </div>
+          )}
 
           {/* Selected Place & Location Confirmation Summary */}
-          {(registrationType === 'inside_kerala' ? selectedUnitId : (outsideForm.outside_unit || outsideForm.outside_district)) && (
+          {(registrationType === 'inside_kerala' ? selectedUnits.length > 0 : (outsideForm.outside_unit || outsideForm.outside_district)) && (
             <div className="p-4 space-y-2 text-xs border border-blue-200 rounded-xl bg-blue-50/70">
               <span className="text-[11px] font-bold uppercase tracking-wider text-markaz-800 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-markaz-700" />
                 <span>Selected Place & Location Summary for Confirmation</span>
               </span>
               {registrationType === 'inside_kerala' ? (
-                <div className="flex flex-wrap items-center gap-1.5 text-slate-800 text-xs font-medium">
-                  <span className="text-slate-500">District:</span>
-                  <span className="font-bold text-slate-900">{districts.find(d => d.id === selectedDistrictId)?.name || '—'}</span>
-                  <span className="text-slate-400">→</span>
-                  <span className="text-slate-500">Zone:</span>
-                  <span className="font-bold text-slate-900">{zones.find(z => z.id === selectedZoneId)?.name || '—'}</span>
-                  <span className="text-slate-400">→</span>
-                  <span className="text-slate-500">Circle:</span>
-                  <span className="font-bold text-slate-900">{circles.find(c => c.id === selectedCircleId)?.name || '—'}</span>
-                  <span className="text-slate-400">→</span>
-                  <span className="font-bold text-amber-900">Unit:</span>
-                  <span className="font-black px-2 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
-                    {units.find(u => u.id === selectedUnitId)?.name || '—'}
-                  </span>
+                <div className="space-y-1.5">
+                  {selectedUnits.map((u) => (
+                    <div key={u.id} className="flex flex-wrap items-center gap-1.5 text-slate-800 text-xs font-medium">
+                      <span className="text-slate-500">District:</span>
+                      <span className="font-bold text-slate-900">{u.districtName || '—'}</span>
+                      <span className="text-slate-400">→</span>
+                      <span className="text-slate-500">Zone:</span>
+                      <span className="font-bold text-slate-900">{u.zoneName || '—'}</span>
+                      <span className="text-slate-400">→</span>
+                      <span className="text-slate-500">Circle:</span>
+                      <span className="font-bold text-slate-900">{u.circleName || '—'}</span>
+                      <span className="text-slate-400">→</span>
+                      <span className="font-bold text-amber-900">Unit:</span>
+                      <span className="font-black px-2 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-300">
+                        {u.name}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-1.5 text-slate-800 text-xs font-medium">
@@ -1370,7 +1719,7 @@ export default function RegistrationPage() {
           <div className="pt-2 text-center">
             <button
               type="submit"
-              disabled={submitting || !student || !!existingRegistration}
+              disabled={submitting || !student || (isRegistered && !canSubmitSelected)}
               className="inline-flex items-center justify-center gap-2 px-10 py-3.5 rounded-xl bg-markaz-700 hover:bg-markaz-800 disabled:bg-slate-400 text-white font-bold text-sm shadow-md hover:shadow-lg transition active:scale-95"
             >
               {submitting ? (
@@ -1381,7 +1730,13 @@ export default function RegistrationPage() {
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  <span>Submit Registration</span>
+                  <span>
+                    {canAddUnits
+                      ? 'Add Units to Registration'
+                      : isRegistered && registrationType === 'outside_kerala'
+                      ? 'Submit Outside Kerala Registration'
+                      : 'Submit Registration'}
+                  </span>
                 </>
               )}
             </button>

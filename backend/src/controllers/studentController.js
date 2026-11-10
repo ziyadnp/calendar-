@@ -1,5 +1,8 @@
 const db = require('../config/db');
 const { logAction } = require('../utils/auditLogger');
+const { REGISTRATION_UNIT_NAMES } = require('../utils/sqlFragments');
+const { getSettings } = require('../utils/settings');
+const { getRegistrationUnits } = require('../utils/registrationUnits');
 
 /**
  * Public Student Lookup by Admission Number OR Registration Number
@@ -52,7 +55,8 @@ async function lookupStudent(req, res, next) {
     const [existingRegistrations] = await db.query(
       `SELECT r.id, r.registration_code, r.registration_type, r.status, r.submitted_at,
               r.calendars_requested, r.additional_calendars, r.calendars_allotted,
-              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, u.name AS unit_name,
+              (SELECT COUNT(*) FROM unit_assignments ua_c WHERE ua_c.registration_id = r.id AND ua_c.status = 'active') AS unit_count,
+              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, ${REGISTRATION_UNIT_NAMES} AS unit_name,
               r.state_name, r.outside_district, r.outside_zone, r.outside_circle, r.outside_unit
        FROM registrations r
        LEFT JOIN districts d ON r.district_id = d.id
@@ -60,12 +64,23 @@ async function lookupStudent(req, res, next) {
        LEFT JOIN circles c ON r.circle_id = c.id
        LEFT JOIN units u ON r.unit_id = u.id
        WHERE r.student_id = ? AND r.status IN ('pending', 'approved')
-       ORDER BY r.submitted_at DESC
-       LIMIT 1`,
+       ORDER BY r.registration_type = 'inside_kerala' DESC, r.submitted_at DESC`,
       [student.id]
     );
 
+    // A student can hold one Inside Kerala (several units) and one Outside Kerala registration
     const isAlreadyRegistered = existingRegistrations.length > 0;
+    for (const reg of existingRegistrations) {
+      // Each held unit with its own location (units may span circles/districts)
+      reg.units = reg.registration_type === 'inside_kerala' ? await getRegistrationUnits(reg.id) : [];
+    }
+
+    // Shared unit slots: Kerala units + Outside Kerala (counts as 1)
+    const { max_units_per_student: maxUnits } = await getSettings();
+    const unitsHeld = existingRegistrations.reduce(
+      (sum, r) => sum + (r.registration_type === 'inside_kerala' ? Number(r.unit_count) || 0 : 1),
+      0
+    );
 
     return res.json({
       success: true,
@@ -82,7 +97,14 @@ async function lookupStudent(req, res, next) {
         mobile: student.mobile
       },
       isAlreadyRegistered,
-      existingRegistration: isAlreadyRegistered ? existingRegistrations[0] : null
+      // Kept for older clients: the Kerala registration if any, else the Outside Kerala one
+      existingRegistration: isAlreadyRegistered ? existingRegistrations[0] : null,
+      registrations: existingRegistrations,
+      unitSlots: {
+        unitsHeld,
+        maxUnits,
+        slotsLeft: Math.max(0, maxUnits - unitsHeld)
+      }
     });
   } catch (err) {
     next(err);
@@ -122,9 +144,16 @@ async function liveSearchStudents(req, res, next) {
       `SELECT s.id, s.reg_no, s.admission_no, s.candidate_name, s.class_name, s.place, s.mobile,
               s.hajer_no, s.hajer_no AS hall_no,
               EXISTS (
-                SELECT 1 FROM registrations r 
+                SELECT 1 FROM registrations r
                 WHERE r.student_id = s.id AND r.status IN ('pending', 'approved')
-              ) AS is_already_registered
+              ) AS is_already_registered,
+              EXISTS (
+                SELECT 1 FROM registrations r
+                WHERE r.student_id = s.id AND r.status IN ('pending', 'approved') AND r.registration_type = 'outside_kerala'
+              ) AS has_outside_registration,
+              (SELECT COUNT(*) FROM unit_assignments ua
+               JOIN registrations r ON r.id = ua.registration_id
+               WHERE r.student_id = s.id AND r.status IN ('pending', 'approved') AND ua.status = 'active') AS held_unit_count
        FROM students s
        WHERE s.is_active = 1
          AND (s.reg_no LIKE ? OR s.admission_no LIKE ? OR s.candidate_name LIKE ?)
@@ -145,19 +174,32 @@ async function liveSearchStudents(req, res, next) {
       ]
     );
 
-    const formatted = students.map((s) => ({
-      id: s.id,
-      regNo: s.reg_no,
-      admissionNo: s.admission_no,
-      candidateName: s.candidate_name,
-      className: s.class_name,
-      class: s.class_name,
-      place: s.place,
-      mobile: s.mobile,
-      hajerNo: s.hajer_no,
-      hall_no: s.hall_no,
-      isAlreadyRegistered: Boolean(s.is_already_registered)
-    }));
+    // Unit slots left under the admin limit: Kerala units + Outside Kerala (counts as 1)
+    const { max_units_per_student: maxUnits } = await getSettings();
+
+    const formatted = students.map((s) => {
+      const isRegistered = Boolean(s.is_already_registered);
+      const hasOutside = Boolean(s.has_outside_registration);
+      const unitsHeld = (Number(s.held_unit_count) || 0) + (hasOutside ? 1 : 0);
+      const unitSlotsLeft = Math.max(0, maxUnits - unitsHeld);
+      return {
+        id: s.id,
+        regNo: s.reg_no,
+        admissionNo: s.admission_no,
+        candidateName: s.candidate_name,
+        className: s.class_name,
+        class: s.class_name,
+        place: s.place,
+        mobile: s.mobile,
+        hajerNo: s.hajer_no,
+        hall_no: s.hall_no,
+        isAlreadyRegistered: isRegistered,
+        hasOutsideRegistration: hasOutside,
+        unitsHeld,
+        maxUnits,
+        unitSlotsLeft
+      };
+    });
 
     return res.json({
       success: true,
@@ -271,7 +313,7 @@ async function getStudentById(req, res, next) {
     // Get registration history
     const [registrations] = await db.query(
       `SELECT r.*, 
-              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, u.name AS unit_name
+              d.name AS district_name, z.name AS zone_name, c.name AS circle_name, ${REGISTRATION_UNIT_NAMES} AS unit_name
        FROM registrations r
        LEFT JOIN districts d ON r.district_id = d.id
        LEFT JOIN zones z ON r.zone_id = z.id

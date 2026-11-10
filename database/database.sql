@@ -171,6 +171,22 @@ CREATE TABLE IF NOT EXISTS `student_import_errors` (
   FOREIGN KEY (`import_id`) REFERENCES `student_import_history`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- 11. System Settings (admin-managed key/value configuration)
+CREATE TABLE IF NOT EXISTS `settings` (
+  `setting_key` VARCHAR(100) NOT NULL PRIMARY KEY,
+  `setting_value` TEXT NULL,
+  `updated_by` INT UNSIGNED NULL,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`updated_by`) REFERENCES `admins`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- Defaults (INSERT IGNORE keeps values an admin has already changed when this file is re-run)
+INSERT IGNORE INTO `settings` (`setting_key`, `setting_value`) VALUES
+  ('registration_open', '1'),
+  ('registration_closed_title', 'Registration Closed'),
+  ('registration_closed_message', 'Calendar distribution registration is currently closed. Please contact the Markaz administration for more information.'),
+  ('max_units_per_student', '1');
+
 -- ============================================================================
 -- FUTURE EXTENSION BLUEPRINT: 11. Calendar Fund & Fee Collection Management
 -- (To be activated when Collection Module is deployed; zero breaking changes to existing schema)

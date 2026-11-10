@@ -192,6 +192,18 @@ export default function AdminLayout() {
           badge: '5 Reports'
         }
       ]
+    },
+    {
+      title: 'CONFIGURATION',
+      items: [
+        {
+          label: 'System Settings',
+          path: '/admin/settings',
+          icon: Settings,
+          iconColor: 'text-slate-300 group-hover:text-white',
+          badge: null
+        }
+      ]
     }
   ];
 

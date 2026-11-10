@@ -10,8 +10,15 @@ import {
   UserCheck,
   Search
 } from 'lucide-react';
+import RegistrationClosed, { usePublicSettings } from '../../components/RegistrationClosed';
 
 export default function HomePage() {
+  const { settings, loading } = usePublicSettings();
+
+  if (!loading && !settings.registrationOpen) {
+    return <RegistrationClosed title={settings.closedTitle} message={settings.closedMessage} />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Hero Welcome Card */}
@@ -127,7 +134,11 @@ export default function HomePage() {
             <span>Unit Allotment</span>
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
-            Inside Kerala units are limited to <strong>one student per unit</strong>. Once selected, confirmed units are reserved and locked immediately.
+            Inside Kerala units are limited to <strong>one student per unit</strong>
+            {settings.maxUnitsPerStudent > 1 && (
+              <>; each student may select up to <strong>{settings.maxUnitsPerStudent} units</strong></>
+            )}
+            . Once selected, confirmed units are reserved and locked immediately.
           </p>
         </div>
 

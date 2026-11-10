@@ -14,6 +14,7 @@ const unitAssignmentRoutes = require('./routes/unitAssignmentRoutes');
 const importRoutes = require('./routes/importRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use('/api/admin/unit-assignments', unitAssignmentRoutes);
 app.use('/api/admin/students/import', importRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/admin/reports', reportRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // 404 Route Handler
 app.use((req, res, next) => {

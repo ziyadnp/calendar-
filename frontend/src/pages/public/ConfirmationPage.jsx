@@ -27,6 +27,9 @@ export default function ConfirmationPage() {
 
   const regType = registration.registrationType || registration.registration_type || 'inside_kerala';
   const isInsideKerala = regType === 'inside_kerala';
+  // Units with their own location (from the API); unit_name is the comma-separated fallback
+  const unitList = Array.isArray(registration.units) ? registration.units : [];
+  const hasMultipleUnits = isInsideKerala && (unitList.length > 1 || (registration.unit_name || '').includes(','));
 
   // Format registration date
   const submittedDate = registration.submitted_at || registration.submittedAt;
@@ -159,8 +162,36 @@ export default function ConfirmationPage() {
           {/* Location Breadcrumb Trail */}
           
 
-          {/* Place Details Grid */}
-          {isInsideKerala ? (
+          {/* Place Details: one row per unit when the student holds several
+              (units can be in different districts/zones/circles) */}
+          {isInsideKerala && unitList.length > 1 ? (
+            <div className="overflow-x-auto border border-blue-200 rounded-xl">
+              <table className="w-full text-xs text-left md:text-sm">
+                <thead className="bg-blue-50/70 text-slate-500 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">#</th>
+                    <th className="px-3 py-2 font-semibold">District</th>
+                    <th className="px-3 py-2 font-semibold">Zone</th>
+                    <th className="px-3 py-2 font-semibold">Circle</th>
+                    <th className="px-3 py-2 font-bold text-amber-800">Allotted Unit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-blue-100">
+                  {unitList.map((u, idx) => (
+                    <tr key={u.id || idx}>
+                      <td className="px-3 py-2.5 font-semibold text-slate-500">{idx + 1}</td>
+                      <td className="px-3 py-2.5 font-bold text-slate-900">{u.district_name}</td>
+                      <td className="px-3 py-2.5 font-bold text-slate-900">{u.zone_name}</td>
+                      <td className="px-3 py-2.5 font-bold text-slate-900">{u.circle_name}</td>
+                      <td className="px-3 py-2.5 font-black text-amber-950" style={{ backgroundColor: '#FBF7D5' }}>
+                        {u.unit_name || u.name}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : isInsideKerala ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs md:text-sm">
               <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200">
                 <span className="text-slate-500 text-[11px] block font-semibold uppercase tracking-wider">
@@ -191,7 +222,7 @@ export default function ConfirmationPage() {
                 style={{ backgroundColor: '#FBF7D5' }}
               >
                 <span className="text-amber-800 text-[11px] block font-bold uppercase tracking-wider">
-                  Allotted Unit
+                  {hasMultipleUnits ? 'Allotted Units' : 'Allotted Unit'}
                 </span>
                 <span className="font-black text-amber-950 text-sm mt-0.5 block">
                   {registration.unit_name || registration.unit || 'N/A'}
@@ -253,7 +284,7 @@ export default function ConfirmationPage() {
               <span className="font-bold text-slate-800">Unit Allocation Verified: </span>
               {isInsideKerala ? (
                 <span>
-                  The unit <strong>{registration.unit_name || registration.unit}</strong> is locked and exclusively assigned to candidate <strong>{student.candidateName || student.candidate_name}</strong> for calendar distribution.
+                  {hasMultipleUnits ? 'The units' : 'The unit'} <strong>{registration.unit_name || registration.unit}</strong> {hasMultipleUnits ? 'are' : 'is'} locked and exclusively assigned to candidate <strong>{student.candidateName || student.candidate_name}</strong> for calendar distribution.
                 </span>
               ) : (
                 <span>

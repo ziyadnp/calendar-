@@ -512,28 +512,53 @@ export default function RegistrationManagementPage() {
                         </div>
                       </td>
                       <td className="py-3 px-3.5 font-bold text-slate-800">{r.reg_no}</td>
-                      <td className="py-3 px-3.5 text-slate-700">
-                        {r.registration_type === 'inside_kerala'
-                          ? r.district_name || '—'
-                          : r.outside_district || r.state_name || '—'}
-                      </td>
-                      <td className="py-3 px-3.5 text-slate-700">
-                        {r.registration_type === 'inside_kerala'
-                          ? r.zone_name || '—'
-                          : r.outside_zone || '—'}
-                      </td>
-                      <td className="py-3 px-3.5 text-slate-700">
-                        {r.registration_type === 'inside_kerala'
-                          ? r.circle_name || '—'
-                          : r.outside_circle || '—'}
-                      </td>
-                      <td className="py-3 px-3.5">
-                        <span className="font-bold text-amber-950 bg-amber-100/70 px-2 py-0.5 rounded border border-amber-300 shadow-2xs block truncate max-w-[150px]">
-                          {r.registration_type === 'inside_kerala'
-                            ? r.unit_name || '—'
-                            : r.outside_unit || '—'}
-                        </span>
-                      </td>
+                      {/* Several units: one aligned line per unit in each location column,
+                          since units can be in different districts/zones/circles */}
+                      {r.registration_type === 'inside_kerala' && r.units?.length > 1 ? (
+                        <>
+                          {['district_name', 'zone_name', 'circle_name'].map((field) => (
+                            <td key={field} className="py-3 px-3.5 text-slate-700">
+                              {r.units.map((u) => (
+                                <div key={u.id} className="flex items-center h-7 truncate max-w-[140px]">{u[field]}</div>
+                              ))}
+                            </td>
+                          ))}
+                          <td className="py-3 px-3.5">
+                            {r.units.map((u) => (
+                              <div key={u.id} className="flex items-center h-7">
+                                <span className="font-bold text-amber-950 bg-amber-100/70 px-2 py-0.5 rounded border border-amber-300 shadow-2xs block truncate max-w-[150px]">
+                                  {u.unit_name}
+                                </span>
+                              </div>
+                            ))}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3 px-3.5 text-slate-700">
+                            {r.registration_type === 'inside_kerala'
+                              ? r.district_name || '—'
+                              : r.outside_district || r.state_name || '—'}
+                          </td>
+                          <td className="py-3 px-3.5 text-slate-700">
+                            {r.registration_type === 'inside_kerala'
+                              ? r.zone_name || '—'
+                              : r.outside_zone || '—'}
+                          </td>
+                          <td className="py-3 px-3.5 text-slate-700">
+                            {r.registration_type === 'inside_kerala'
+                              ? r.circle_name || '—'
+                              : r.outside_circle || '—'}
+                          </td>
+                          <td className="py-3 px-3.5">
+                            <span className="font-bold text-amber-950 bg-amber-100/70 px-2 py-0.5 rounded border border-amber-300 shadow-2xs block truncate max-w-[150px]">
+                              {r.registration_type === 'inside_kerala'
+                                ? r.unit_name || '—'
+                                : r.outside_unit || '—'}
+                            </span>
+                          </td>
+                        </>
+                      )}
 
                       {/* FEATURE: CALENDARS REQUIRED / QUOTA WITH [+] AND [-] */}
                       <td className="py-3 px-3.5 text-center">
@@ -800,8 +825,25 @@ export default function RegistrationManagementPage() {
             <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 text-xs space-y-1">
               <span className="text-[11px] font-bold uppercase tracking-wider text-markaz-700 block">
                 Allotted Field Work Location
+                {selectedReg.registration_type === 'inside_kerala' && selectedReg.units?.length > 1
+                  ? ` (${selectedReg.units.length} Units)`
+                  : ''}
               </span>
-              {selectedReg.registration_type === 'inside_kerala' ? (
+              {selectedReg.registration_type === 'inside_kerala' && selectedReg.units?.length > 1 ? (
+                // One block per unit: each unit has its own district/zone/circle
+                <div className="grid gap-2 pt-1 sm:grid-cols-2">
+                  {selectedReg.units.map((u, idx) => (
+                    <div key={u.id} className="p-2.5 space-y-0.5 bg-white border border-blue-200 rounded-lg text-slate-800 font-semibold">
+                      <p className="text-markaz-800 font-bold">
+                        {idx + 1}. {u.unit_name}
+                      </p>
+                      <p>District: {u.district_name}</p>
+                      <p>Zone: {u.zone_name}</p>
+                      <p>Circle: {u.circle_name}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : selectedReg.registration_type === 'inside_kerala' ? (
                 <div className="space-y-0.5 text-slate-800 font-semibold">
                   <p>District: {selectedReg.district_name}</p>
                   <p>Zone: {selectedReg.zone_name}</p>
