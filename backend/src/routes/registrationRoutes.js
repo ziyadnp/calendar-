@@ -13,5 +13,6 @@ router.get('/:id', authenticateToken, registrationController.getRegistrationById
 router.patch('/:id/status', authenticateToken, registrationController.updateRegistrationStatus);
 router.patch('/:id/quota', authenticateToken, registrationController.updateCalendarQuota);
 router.delete('/:id', authenticateToken, registrationController.deleteRegistration);
+router.post('/:id/remove-units', authenticateToken, registrationController.removeRegistrationUnits);
 
 module.exports = router;

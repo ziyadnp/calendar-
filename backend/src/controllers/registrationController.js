@@ -740,7 +740,109 @@ async function deleteRegistration(req, res, next) {
   }
 }
 
+/**
+ * Remove some units from a multi-unit Kerala registration.
+ * Body: { unit_ids: [..] }. The removed units become available again; the registration,
+ * its code and calendar quota stay. Removing every unit deletes the registration
+ * (same as deleteRegistration).
+ */
+async function removeRegistrationUnits(req, res, next) {
+  let connection;
+  try {
+    const id = req.params.id;
+    const unitIds = [...new Set((Array.isArray(req.body.unit_ids) ? req.body.unit_ids : [])
+      .map((v) => parseInt(v, 10))
+      .filter((v) => Number.isInteger(v) && v > 0))];
+
+    if (unitIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'Select at least one unit to remove.' });
+    }
+
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `SELECT r.*, s.candidate_name, s.reg_no
+       FROM registrations r
+       LEFT JOIN students s ON r.student_id = s.id
+       WHERE r.id = ? FOR UPDATE`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({ success: false, message: 'Registration not found' });
+    }
+    const reg = rows[0];
+
+    const [active] = await connection.query(
+      `SELECT ua.id, ua.unit_id, u.name AS unit_name
+       FROM unit_assignments ua
+       JOIN units u ON u.id = ua.unit_id
+       WHERE ua.registration_id = ? AND ua.status = 'active'
+       ORDER BY ua.id
+       FOR UPDATE`,
+      [id]
+    );
+
+    const toRemove = active.filter((a) => unitIds.includes(a.unit_id));
+    if (toRemove.length !== unitIds.length) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({ success: false, message: 'One or more selected units are not assigned to this registration.' });
+    }
+
+    const remaining = active.filter((a) => !unitIds.includes(a.unit_id));
+
+    if (remaining.length === 0) {
+      // Every unit selected: remove the whole registration
+      await connection.query(`DELETE FROM unit_assignments WHERE registration_id = ?`, [id]);
+      await connection.query(`DELETE FROM registrations WHERE id = ?`, [id]);
+      await connection.commit();
+      connection.release();
+      return res.json({
+        success: true,
+        registrationDeleted: true,
+        message: `Registration ${reg.registration_code} for "${reg.candidate_name}" has been deleted. All its units are now available.`
+      });
+    }
+
+    await connection.query(`DELETE FROM unit_assignments WHERE id IN (?)`, [toRemove.map((a) => a.id)]);
+
+    // If the primary unit was removed, promote the first remaining unit with its place hierarchy
+    if (unitIds.includes(reg.unit_id)) {
+      await connection.query(
+        `UPDATE registrations r
+         JOIN units u ON u.id = ?
+         JOIN circles c ON u.circle_id = c.id
+         JOIN zones z ON c.zone_id = z.id
+         SET r.unit_id = u.id, r.circle_id = c.id, r.zone_id = z.id, r.district_id = z.district_id
+         WHERE r.id = ?`,
+        [remaining[0].unit_id, id]
+      );
+    }
+
+    await connection.commit();
+    connection.release();
+
+    const removedNames = toRemove.map((a) => a.unit_name).join(', ');
+    return res.json({
+      success: true,
+      registrationDeleted: false,
+      message: `Removed ${removedNames} from registration ${reg.registration_code} ("${reg.candidate_name}"). ${remaining.length} unit${remaining.length === 1 ? '' : 's'} remain${remaining.length === 1 ? 's' : ''}.`
+    });
+  } catch (err) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
+    next(err);
+  }
+}
+
 module.exports = {
+  removeRegistrationUnits,
   submitRegistration,
   getRegistrations,
   getRegistrationById,

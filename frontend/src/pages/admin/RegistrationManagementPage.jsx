@@ -296,24 +296,53 @@ export default function RegistrationManagementPage() {
     }
   };
 
-  const handleDeleteRegistration = async (reg) => {
-    const candidate = reg.candidate_name || 'student';
-    const regNo = reg.reg_no || reg.registration_code || '';
-    const unitLabel = reg.unit_name ? ` (${reg.unit_name})` : '';
+  // Delete modal: a multi-unit registration lets the admin pick which units to remove;
+  // picking every unit deletes the whole registration.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteUnitIds, setDeleteUnitIds] = useState([]);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
-    if (!window.confirm(`Are you sure you want to cancel and delete the registration for "${candidate}" (${regNo})?\n\nThis will immediately release the assigned unit${unitLabel} and allow the student to register again.`)) {
-      return;
-    }
+  const deleteUnits = deleteTarget?.registration_type === 'inside_kerala' && Array.isArray(deleteTarget?.units)
+    ? deleteTarget.units
+    : [];
+  const isMultiUnitDelete = deleteUnits.length > 1;
+  const deletesWholeRegistration = !isMultiUnitDelete || deleteUnitIds.length === deleteUnits.length;
 
+  const handleDeleteRegistration = (reg) => {
+    setDeleteTarget(reg);
+    setDeleteUnitIds([]);
+    setDeleteError('');
+  };
+
+  const closeDeleteModal = () => {
+    if (deleting) return;
+    setDeleteTarget(null);
+  };
+
+  const toggleDeleteUnit = (unitId) => {
+    setDeleteUnitIds((prev) => (prev.includes(unitId) ? prev.filter((x) => x !== unitId) : [...prev, unitId]));
+  };
+
+  const confirmDelete = async () => {
+    const reg = deleteTarget;
+    if (!reg) return;
+    setDeleting(true);
+    setDeleteError('');
     try {
-      const res = await api.delete(`/registrations/${reg.id}`);
+      const res = isMultiUnitDelete
+        ? await api.post(`/registrations/${reg.id}/remove-units`, { unit_ids: deleteUnitIds })
+        : await api.delete(`/registrations/${reg.id}`);
       setQuotaToast({
         type: 'success',
-        text: res.data?.message || `Registration for "${candidate}" has been cancelled and deleted.`
+        text: res.data?.message || `Registration for "${reg.candidate_name}" has been deleted.`
       });
+      setDeleteTarget(null);
       fetchRegistrations(pagination.page);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to cancel and delete registration.');
+      setDeleteError(err.response?.data?.message || 'Failed to delete. Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -895,6 +924,156 @@ export default function RegistrationManagementPage() {
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded-lg transition"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete / Remove Units Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={closeDeleteModal}>
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 shrink-0 rounded-full bg-red-50 border border-red-200 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">
+                    {isMultiUnitDelete ? 'Remove Units or Delete Registration' : 'Delete Registration'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {deleteTarget.candidate_name} ({deleteTarget.reg_no})
+                    {deleteTarget.registration_code ? ` · ${deleteTarget.registration_code}` : ''}
+                  </p>
+                </div>
+              </div>
+              <button onClick={closeDeleteModal} className="p-1 text-slate-400 hover:text-slate-600 rounded" disabled={deleting}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isMultiUnitDelete ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Select the units to remove ({deleteUnitIds.length} of {deleteUnits.length} selected)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeleteUnitIds(deleteUnitIds.length === deleteUnits.length ? [] : deleteUnits.map((u) => u.id))
+                    }
+                    className="text-[11px] font-bold text-markaz-700 hover:underline"
+                  >
+                    {deleteUnitIds.length === deleteUnits.length ? 'Clear all' : 'Select all'}
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  {deleteUnits.map((u) => {
+                    const checked = deleteUnitIds.includes(u.id);
+                    return (
+                      <label
+                        key={u.id}
+                        className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition ${
+                          checked ? 'bg-red-50 border-red-300' : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleDeleteUnit(u.id)}
+                          className="mt-0.5 w-4 h-4 accent-red-600"
+                        />
+                        <div className="text-xs">
+                          <p className="font-bold text-slate-900">{u.unit_name}</p>
+                          <p className="text-slate-500">
+                            {u.district_name} › {u.zone_name} › {u.circle_name}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-0.5">
+                <p>
+                  <span className="text-slate-500">Category:</span>{' '}
+                  <span className="font-semibold">
+                    {deleteTarget.registration_type === 'inside_kerala' ? 'Inside Kerala' : 'Outside Kerala'}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-slate-500">Unit:</span>{' '}
+                  <span className="font-semibold">
+                    {deleteTarget.registration_type === 'inside_kerala' ? deleteTarget.unit_name : deleteTarget.outside_unit}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-slate-500">Calendars:</span>{' '}
+                  <span className="font-semibold">{deleteTarget.calendars_allotted ?? deleteTarget.calendars_requested ?? 0}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Consequence message changes with the selection */}
+            {isMultiUnitDelete && deleteUnitIds.length === 0 ? (
+              <p className="text-xs text-slate-500">Select one or more units above.</p>
+            ) : deletesWholeRegistration ? (
+              <div className="flex gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  The <strong>entire registration</strong> will be deleted, including its calendar allotment
+                  ({deleteTarget.calendars_allotted ?? deleteTarget.calendars_requested ?? 0}).
+                  {deleteTarget.registration_type === 'inside_kerala' &&
+                    ` ${isMultiUnitDelete ? 'All its units' : 'The unit'} will become available to other students.`}{' '}
+                  This cannot be undone.
+                </p>
+              </div>
+            ) : (
+              <div className="flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  Only the selected {deleteUnitIds.length === 1 ? 'unit' : `${deleteUnitIds.length} units`} will be
+                  removed and become available to other students. The registration, its code and calendar allotment
+                  stay, with {deleteUnits.length - deleteUnitIds.length} unit
+                  {deleteUnits.length - deleteUnitIds.length === 1 ? '' : 's'} remaining.
+                </p>
+              </div>
+            )}
+
+            {deleteError && (
+              <p className="text-xs font-semibold text-red-700">{deleteError}</p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting || (isMultiUnitDelete && deleteUnitIds.length === 0)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-xs rounded-lg transition"
+              >
+                {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>
+                  {deletesWholeRegistration
+                    ? 'Delete Registration'
+                    : `Remove ${deleteUnitIds.length} Unit${deleteUnitIds.length === 1 ? '' : 's'}`}
+                </span>
               </button>
             </div>
           </div>
